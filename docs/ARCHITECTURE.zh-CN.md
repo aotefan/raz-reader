@@ -2,7 +2,7 @@
 
 [English](ARCHITECTURE.md) · [中文首页](../README.zh-CN.md)
 
-Little Reader 由浏览器界面、Python 接口、SQLite 数据和可选本地模型组成。资料由部署者自行提供。公开仓库是重新整理的源码快照，不包含私人部署的 Git 历史或运行数据。
+RAZ Reader 由浏览器界面、Python 接口、SQLite 数据和可选本地模型组成。资料由部署者自行提供。公开仓库是重新整理的源码快照，不包含私人部署的 Git 历史或运行数据。
 
 ## 阅读和语言工具
 

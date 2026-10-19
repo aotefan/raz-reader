@@ -2,7 +2,7 @@
 
 [中文](ARCHITECTURE.zh-CN.md) · [README](../README.md)
 
-Little Reader is a browser application with a Python API and optional local model workers. Books and user state are supplied by the operator. The repository is a clean source snapshot; it contains neither the private deployment's history nor its data.
+RAZ Reader is a browser application with a Python API and optional local model workers. Books and user state are supplied by the operator. The repository is a clean source snapshot; it contains neither the private deployment's history nor its data.
 
 ## Reading and language tools
 

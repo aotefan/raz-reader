@@ -1,6 +1,6 @@
 # Third-party components and notices
 
-Original Little Reader source and original example text/vector artwork are distributed under [Apache-2.0](LICENSE). Each third-party component retains its own license. This document identifies bundled code and optional external components; it does not license any user's books or audio.
+Original RAZ Reader source and original example text/vector artwork are distributed under [Apache-2.0](LICENSE). Each third-party component retains its own license. This document identifies bundled code and optional external components; it does not license any user's books or audio.
 
 ## Included browser components
 
@@ -10,7 +10,7 @@ Original Little Reader source and original example text/vector artwork are distr
 
 ## Optional installed components — not bundled as binaries or model weights
 
-- **OpenPronounce 0.3.0**, MIT, copyright Jean-François Lépine. Source revision `74bc17ea406e6f057f15eea0e70951e1931af868` is pinned in the requirements. Little Reader uses the phoneme APIs and adapted weighted scoring, not the upstream online TTS/full-score path. See `THIRD_PARTY_LICENSES/OpenPronounce-MIT.txt`.
+- **OpenPronounce 0.3.0**, MIT, copyright Jean-François Lépine. Source revision `74bc17ea406e6f057f15eea0e70951e1931af868` is pinned in the requirements. RAZ Reader uses the phoneme APIs and adapted weighted scoring, not the upstream online TTS/full-score path. See `THIRD_PARTY_LICENSES/OpenPronounce-MIT.txt`.
 - **Phonemizer** (GPL-3.0), **eSpeak NG** (GPL-3.0), and **Levenshtein** (GPL-2.0-or-later) are part of the optional speech toolchain. Phonemizer and Levenshtein license texts are retained under `THIRD_PARTY_LICENSES/`. Their licenses are not replaced by the application's license; binary/container distributors must account for the actual components they distribute.
 - The optional **facebook/wav2vec2-lv-60-espeak-cv-ft** model is downloaded from the revision pinned in `scripts/install_assessment_model.py`; its upstream model card identifies Apache-2.0. The installer retains the model card locally. Weights are not committed.
 - **ECDICT** is downloaded from pinned revision `bc015ed2e24a7abef49fc6dbbb7fe32c1dadaf8b`; upstream declares MIT. Its original license is retained. The data incorporates multiple sources: this project does not independently clear every underlying entry or redistribute the database.

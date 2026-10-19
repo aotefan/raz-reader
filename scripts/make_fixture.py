@@ -64,7 +64,7 @@ def make():
     root.mkdir(parents=True, exist_ok=True)
     pdf = root / 'A Little Garden.pdf'
     c = canvas.Canvas(str(pdf), pagesize=(600, 760), invariant=1)
-    c.setTitle('A Little Garden'); c.setAuthor('Little Reader contributors — original example')
+    c.setTitle('A Little Garden'); c.setAuthor('RAZ Reader contributors — original example')
     for i, text in enumerate(TEXT):
         c.setFillColorRGB(.95, .96, .89); c.rect(0, 0, 600, 760, fill=1, stroke=0)
         c.setFillColorRGB(.24, .40, .29); c.setFont('Helvetica', 12)

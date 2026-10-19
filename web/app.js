@@ -1,3 +1,4 @@
+// Keep legacy storage keys so the project rename preserves existing reading preferences and pending writes.
 import * as pdfjs from '/vendor/pdfjs/build/pdf.mjs';
 import { captureProgress, pendingProgress, syncProgress, flushProgress, isLatestProgress, configureProgress } from '/progress.js';
 import { readingState, mostRecentFirst, shelfOrder } from '/reading.js';
@@ -318,13 +319,13 @@ function readerFailed() {
   setReadingControls(false);
   $('page-number').textContent = '打开失败，请重试';
   $('retry-reader').hidden = false;
-  document.title = 'Little Reader · 打开失败';
+  document.title = 'RAZ Reader · 打开失败';
 }
 function loadPDFReader() {
   cancelReaderLoad();
   const generation = renderGeneration;
   $('page-number').textContent = readerAttempts ? '正在重新打开…' : '正在打开…';
-  document.title = 'Little Reader · 正在打开';
+  document.title = 'RAZ Reader · 正在打开';
   $('pdf-frame').src = '/vendor/pdfjs/web/viewer.html?file=' + encodeURIComponent(current.pdf_url)
     + '&session=' + generation + '-' + readerAttempts;
   readerTimer = setTimeout(() => {
@@ -391,7 +392,7 @@ document.addEventListener('webviewerloaded', event => {
       app.pdfViewer.currentScaleValue = 'page-fit';
       app.page = page;
       ready = true;
-      cancelReaderLoad(); document.title = `${current.title} · Little Reader`;
+      cancelReaderLoad(); document.title = `${current.title} · RAZ Reader`;
       updatePage(page); saveProgress();
     });
     app.eventBus.on('pagechanging', event => {
@@ -588,7 +589,7 @@ $('prev').onclick = () => { pendingAudioAdvance = false; navigate(-1); };
 $('next').onclick = () => { pendingAudioAdvance = false; navigate(1); };
 $('complete').onclick = () => { if (current && ready) { current.progress.completed = true; saveProgress(); } };
 $('back').onclick = async () => {
-  cancelReaderLoad(); document.title = 'Little Reader';
+  cancelReaderLoad(); document.title = 'RAZ Reader';
   unbindWordLookup?.(); unbindWordLookup = null; wordLookup.close();
   translation.reset();
   const saved = saveProgress();

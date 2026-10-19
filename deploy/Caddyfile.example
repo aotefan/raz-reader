@@ -1,6 +1,6 @@
 # Replace the domain and static web path before use. Never serve the repository root.
 reader.example.com {
-    root * /srv/little-reader/web
+    root * /srv/raz-reader/web
     encode zstd gzip
     header {
         X-Content-Type-Options nosniff

@@ -8,7 +8,7 @@ import subprocess
 import sys
 
 APP = Path(__file__).resolve().parents[1]
-LABEL = 'org.littlereader.scorer'
+LABEL = 'org.razreader.scorer'
 
 
 def main():

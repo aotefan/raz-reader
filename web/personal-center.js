@@ -1,3 +1,4 @@
+// Keep legacy storage keys so the project rename preserves existing reading preferences and pending writes.
 import { readingState, mostRecentFirst } from '/reading.js';
 import { scopeHeaders } from '/identity.js';
 const $ = id => document.getElementById(id);

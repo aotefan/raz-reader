@@ -258,3 +258,6 @@ select{font:inherit;color:inherit;min-height:44px;border:1px solid #dce3dc;borde
 .cloud-reading #translate-page,
 .cloud-reading #word-lookup-hint,
 .cloud-reading .book-rating { display: none !important; }
+
+/* Compact RAZ wordmark; retain the original touch target and star. */
+.brand-icon{font-size:12px;letter-spacing:.5px;font-weight:800}

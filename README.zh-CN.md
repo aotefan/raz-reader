@@ -1,19 +1,19 @@
 <div align="center">
 
-# Little Reader
+# RAZ Reader · 开源 RAZ 分级阅读与跟读评分
 
-**安静地读一本书，听一句原声，练一次发音。**
+**RAZ 绘本阅读、英语跟读评分、个人进度，一个网页完成。**
 
 自建分级阅读 · 独立阅读进度 · 本地语音模型 · 可选 Mac 加速
 
 [English](README.md) · [简体中文](README.zh-CN.md)
 
-[![检查](https://github.com/aotefan/little-reader/actions/workflows/ci.yml/badge.svg)](https://github.com/aotefan/little-reader/actions/workflows/ci.yml)
+[![检查](https://github.com/aotefan/raz-reader/actions/workflows/ci.yml/badge.svg)](https://github.com/aotefan/raz-reader/actions/workflows/ci.yml)
 [![源码许可 Apache-2.0](https://img.shields.io/badge/source_license-Apache--2.0-365c50)](LICENSE)
 
 </div>
 
-Little Reader 把**你自己的 PDF 绘本**整理成一个手机、平板、电脑都能使用的阅读网站。看绘本、听已有原声、查词、翻译、录音跟读，常用操作收在紧凑的工具栏里。
+RAZ Reader 是一款开源的 **RAZ 分级阅读器与英语跟读评分工具**，把**你自己的 PDF 绘本**整理成一个手机、平板、电脑都能使用的阅读网站。支持 RAZ 绘本阅读、原声点读、中文翻译、录音评测、多账号切换和阅读进度同步，常用操作收在紧凑的工具栏里。本项目为非官方工具。
 
 **这个仓库开源的是软件，不是 RAZ 资料包。** 不包含商业绘本、配套音频、用户录音、账号数据库、模型权重、线上部署配置或密钥。下面的截图全部来自项目自制的示例故事和矢量插图。
 
@@ -65,8 +65,8 @@ sudo apt-get install python3 python3-venv poppler-utils qpdf ffmpeg espeak-ng te
 ### 启动
 
 ```bash
-git clone https://github.com/aotefan/little-reader.git
-cd little-reader
+git clone https://github.com/aotefan/raz-reader.git
+cd raz-reader
 ./scripts/bootstrap.sh
 ./scripts/start.sh
 ```

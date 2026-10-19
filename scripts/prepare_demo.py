@@ -57,10 +57,10 @@ def artwork(c, kind):
 
 def example_pdf(path, title, kind, background, sentences):
     c=canvas.Canvas(str(path),pagesize=(600,760),invariant=1)
-    c.setTitle(title);c.setAuthor('Little Reader contributors — original example')
+    c.setTitle(title);c.setAuthor('RAZ Reader contributors — original example')
     for number, sentence in enumerate([title, *sentences],1):
         color(c,background);c.rect(0,0,600,760,fill=1,stroke=0)
-        color(c,'#365c50');c.setFont('Helvetica',11);c.drawCentredString(300,710,'LITTLE READER / ORIGINAL EXAMPLE')
+        color(c,'#365c50');c.setFont('Helvetica',11);c.drawCentredString(300,710,'RAZ READER / ORIGINAL EXAMPLE')
         c.setFont('Helvetica-Bold',32 if number==1 else 23);c.drawCentredString(300,605,sentence)
         artwork(c,kind)
         color(c,'#6f7d70');c.setFont('Helvetica',11);c.drawCentredString(300,76,'A small story. A little discovery.')

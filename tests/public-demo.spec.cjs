@@ -24,7 +24,7 @@ for (const mobile of [false, true]) {
     const garden = library.books.find(book => book.title === 'A Little Garden');
     await request.post('/api/progress', { data: { edition_id: garden.edition_id, page: 1 } });
     await page.goto('/');
-    await expect(page).toHaveTitle(/Little Reader/);
+    await expect(page).toHaveTitle(/RAZ Reader/);
     await expect(page.locator('.book-card')).toHaveCount(6);
     await expect(page.locator('.cover-loading:visible')).toHaveCount(0, { timeout: 30000 });
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

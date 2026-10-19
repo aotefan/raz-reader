@@ -1,3 +1,4 @@
+// Keep legacy storage keys so the project rename preserves existing reading preferences and pending writes.
 // A small local outbox: only book identifiers and progress, never reading media.
 const PREFIX = 'little-reader:pending:';
 const streams = new Map();

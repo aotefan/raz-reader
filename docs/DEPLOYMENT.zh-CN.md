@@ -6,7 +6,7 @@
 
 ## 1. 准备服务器
 
-按 README 安装 Linux 依赖，把项目放在 `/srv/little-reader`，使用专用服务用户运行 `./scripts/bootstrap.sh`。需要翻译和评分时另装可选环境；评分需要 Python 3.11，以及足够容纳 PyTorch 和模型的磁盘、内存。
+按 README 安装 Linux 依赖，把项目放在 `/srv/raz-reader`，使用专用服务用户运行 `./scripts/bootstrap.sh`。需要翻译和评分时另装可选环境；评分需要 Python 3.11，以及足够容纳 PyTorch 和模型的磁盘、内存。
 
 自己的资料必须在这台服务器上运行 `scripts/import_library.py --root ...` 导入。书目包含绝对路径，不能直接把 Mac 的书目复制过去就当资料迁移完成。服务用户须能读取相应绘本与音频。
 
@@ -26,7 +26,7 @@ python3 -m engine.server \
 
 ## 2. 配置 HTTPS 入口
 
-域名解析到服务器，开放 80/443。按实际路径和域名修改 [Caddy 配置示例](../deploy/Caddyfile.example)。网站根目录必须是 `/srv/little-reader/web`，不能是整个项目或 `data`。
+域名解析到服务器，开放 80/443。按实际路径和域名修改 [Caddy 配置示例](../deploy/Caddyfile.example)。网站根目录必须是 `/srv/raz-reader/web`，不能是整个项目或 `data`。
 
 Caddy 公开静态界面，把 `/api/*` 转给回环地址后端，保留公网 Host / Origin 并传递真实客户端地址。账号 Cookie 和麦克风需要有效 HTTPS；不要把 8765 直接开放到公网。访问 `https://reader.example.com/api/health` 应显示 `cloud_full`，再验证注册、录音及第二个浏览器的数据隔离。
 
@@ -46,18 +46,18 @@ Caddy 公开静态界面，把 `/api/*` 转给回环地址后端，保留公网 
 python3 scripts/install_mac_scorer.py
 ```
 
-启动项名称是 `org.littlereader.scorer`，用户登录后启动，异常退出后重启，不阻止正常休眠。不需要 Mac 入站端口或公开隧道，日志在被忽略的 `data/mac-scorer/` 内，不应公开。
+启动项名称是 `org.razreader.scorer`，用户登录后启动，异常退出后重启，不阻止正常休眠。不需要 Mac 入站端口或公开隧道，日志在被忽略的 `data/mac-scorer/` 内，不应公开。
 
 停用 Mac 辅助评分，服务器继续工作：
 
 ```bash
-launchctl bootout gui/$(id -u)/org.littlereader.scorer
+launchctl bootout gui/$(id -u)/org.razreader.scorer
 ```
 
 恢复：
 
 ```bash
-launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/org.littlereader.scorer.plist"
+launchctl bootstrap gui/$(id -u) "$HOME/Library/LaunchAgents/org.razreader.scorer.plist"
 ```
 
 Mac 缺席或繁忙直接走服务器；已领取任务后失联，心跳租约到期后回到服务器；持续连接但卡住还受总超时限制。正式使用前用自己的短录音验证两个路径。Mac 在线也不能代替网站服务器。

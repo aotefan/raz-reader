@@ -1,14 +1,28 @@
 {
-  "name": "little-reader",
-  "version": "0.1.0",
+  "name": "raz-reader",
+  "version": "0.1.1",
   "private": true,
-  "description": "A self-hosted graded reading and pronunciation practice app. Bring your own books.",
+  "description": "Unofficial open-source RAZ graded reading and English pronunciation practice. Bring your own books.",
   "license": "Apache-2.0",
-  "repository": { "type": "git", "url": "https://github.com/aotefan/little-reader.git" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aotefan/raz-reader.git"
+  },
   "scripts": {
     "test": "python3 -m unittest discover -s tests -p 'test_*.py' -v",
     "test:e2e": "playwright test",
     "audit:public": "python3 scripts/audit_public.py"
   },
-  "devDependencies": { "@playwright/test": "1.58.2" }
+  "devDependencies": {
+    "@playwright/test": "1.58.2"
+  },
+  "keywords": [
+    "raz",
+    "raz-reader",
+    "graded-reading",
+    "pronunciation",
+    "english-learning",
+    "pdf-reader",
+    "self-hosted"
+  ]
 }
