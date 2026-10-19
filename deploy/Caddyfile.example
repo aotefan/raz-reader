@@ -1,0 +1,35 @@
+# Replace the domain and static web path before use. Never serve the repository root.
+reader.example.com {
+    root * /srv/little-reader/web
+    encode zstd gzip
+    header {
+        X-Content-Type-Options nosniff
+        Referrer-Policy no-referrer
+        Cross-Origin-Resource-Policy same-origin
+        Permissions-Policy "microphone=(self), camera=(), geolocation=()"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' blob:; font-src 'self' data:; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'none'"
+        -Server
+    }
+    @hidden path_regexp hidden (^|/)\.
+    respond @hidden 404
+    @modules path *.mjs
+    header @modules Content-Type "text/javascript; charset=utf-8"
+    handle /api/* {
+        request_body {
+            max_size 21MB
+        }
+        reverse_proxy 127.0.0.1:8765 {
+            header_up X-Real-IP {remote_host}
+            transport http {
+                dial_timeout 5s
+                response_header_timeout 180s
+            }
+        }
+    }
+    handle {
+        @write not method GET HEAD
+        respond @write "Read only" 405
+        header Cache-Control "no-cache"
+        file_server
+    }
+}

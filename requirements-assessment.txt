@@ -1,0 +1,4 @@
+# Source audited at this commit; dependencies isolated from the reader/translation.
+openpronounce @ git+https://github.com/Halleck45/OpenPronounce.git@74bc17ea406e6f057f15eea0e70951e1931af868
+transformers==4.57.6
+torch==2.14.1

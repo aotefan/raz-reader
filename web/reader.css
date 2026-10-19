@@ -1,0 +1,21 @@
+/* RAZ host adaptation. Original PDF.js rendering, page views and zoom are reused. */
+.toolbar, #sidebarContainer, #viewsManager, #editorModeButtons, #secondaryToolbar,
+#editorUndoBar, #floatingToolbar, #commentManagerSidebar { display: none !important; }
+#viewerContainer { top: 0 !important; }
+#outerContainer #mainContainer { margin-left: 0 !important; }
+:root { --body-bg-color: #eceeea; --page-margin: 0px auto; }
+.pdfViewer .page { border: 0; border-image: none; margin: 0 auto; }
+
+/* Keep original Screen annotation locations; enlarge only the upstream play hit area. */
+.annotationLayer .mediaAnnotation{overflow:visible}
+.annotationLayer .mediaPlayButton{min-width:44px;min-height:44px;border-radius:50%;background-color:#fffefaeb;box-shadow:0 2px 8px #193b3030}
+/* PDF glyphs are painted on the canvas below the transparent text layer. */
+::highlight(raz-lookup){background-color:rgba(255,205,72,.30);color:transparent}
+::highlight(raz-speaking){background-color:rgba(141,183,109,.28);color:transparent}
+.raz-word-lookup .textLayer span{cursor:pointer}
+
+.raz-word-lookup .textLayer { touch-action: manipulation; }
+/* Upstream desktop toolbar minimum must not crop a narrow embedded reader. */
+#mainContainer{min-width:0}
+.raz-ocr-layer{position:absolute;inset:0;z-index:2;pointer-events:none;touch-action:manipulation}
+.raz-ocr-layer span{position:absolute;white-space:pre;color:transparent;font-family:Arial,sans-serif;transform-origin:0 0;pointer-events:auto;cursor:pointer;user-select:text;touch-action:manipulation}

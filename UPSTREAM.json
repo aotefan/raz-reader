@@ -1,0 +1,14 @@
+{
+  "project": "Mozilla PDF.js generic viewer",
+  "repository": "https://github.com/mozilla/pdf.js",
+  "version": "6.4.299",
+  "commit": "d0991a0d53f3bb3a7307e3b83f279c1d117aafb3",
+  "distribution": "pdfjs-6.4.299-legacy-dist.zip",
+  "distribution_sha256": "c894bce53b2f4c3e13141e088c89cc051a1f7118ba4a2c02ec058798ae1303d1",
+  "modifications": [
+    "web/vendor/pdfjs/web/viewer.html: local stylesheet, same-origin connect CSP, sequential local reader-boot.js module entry",
+    "Omitted bundled example PDF and upstream PDF test corpus from this source distribution"
+  ],
+  "runtime": "Unmodified official legacy runtime; complete upstream source available at the recorded commit",
+  "source_url": "https://github.com/mozilla/pdf.js/tree/d0991a0d53f3bb3a7307e3b83f279c1d117aafb3"
+}

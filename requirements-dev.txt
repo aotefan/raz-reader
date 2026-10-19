@@ -1,0 +1,4 @@
+# Only needed for self-authored fixture generation, not normal runtime.
+reportlab==4.4.3
+pillow==11.3.0
+charset-normalizer==3.5.2

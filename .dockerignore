@@ -1,0 +1,15 @@
+.git
+.venv*
+node_modules
+data
+library
+fixtures/generated
+.secrets
+.env*
+*.key
+*.pem
+**/__pycache__
+**/*.pyc
+test-results
+playwright-report
+docs/screenshots

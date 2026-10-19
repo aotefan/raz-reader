@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="/favicon.svg"><title>Little Reader · Graded Reading</title>
+  <link rel="stylesheet" href="/app.css">
+  <link rel="stylesheet" href="/reader-toolbar.css">
+  <link rel="stylesheet" href="/personal-center.css">
+  <link rel="stylesheet" href="/selection-sheet.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div id="shelf">
+    <aside class="sidebar">
+      <div class="brand-row"><a class="brand" href="/" aria-label="Little Reader 首页"><span class="brand-icon">lr<span>✦</span></span>little reader</a><button id="open-personal-center" aria-label="登陆，进入个人中心" aria-describedby="shelf-read-count"><span class="personal-entry-text"><span id="personal-entry-label">登陆</span><small id="shelf-read-count" hidden></small></span></button></div>
+    </aside>
+    <main class="library">
+      <div class="shelf-toolbar"><div class="shelf-heading"><h2 id="level-title">全部绘本 <span id="book-count"></span></h2><p id="level-description">正在加载本地书库…</p></div><label class="search">⌕ <input id="search" type="search" placeholder="找一本书…" aria-label="搜索书名"></label></div>
+      <div class="shelf-options" role="group" aria-label="书架筛选"><button id="level-select" class="picker-trigger" aria-label="阅读等级" aria-haspopup="dialog" aria-controls="selection-sheet" aria-expanded="false"><span class="picker-label">全部等级</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><button id="reading-filter" class="picker-trigger" aria-label="阅读状态" aria-haspopup="dialog" aria-controls="selection-sheet" aria-expanded="false"><span class="picker-label">全部状态</span><svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></button><label class="audio-filter"><input id="audio-only" type="checkbox" aria-label="只看可朗读">可朗读</label></div>
+      <div id="books" class="book-grid" aria-live="polite"></div>
+      <p id="empty" hidden>这个等级还没有导入样本。先从有绘本的等级开始吧。</p>
+      <footer class="library-footer">慢慢读，每一页都是小小的进步。<span>阅读器基于 <a href="https://github.com/mozilla/pdf.js" target="_blank" rel="noreferrer">Mozilla PDF.js</a> · Apache-2.0</span></footer>
+    </main>
+  </div>
+  <dialog id="selection-sheet" aria-labelledby="selection-title">
+    <div id="selection-handle" aria-hidden="true"><span></span></div>
+    <header><h2 id="selection-title">阅读等级</h2><button id="close-selection-sheet" aria-label="关闭选择" autofocus>×</button></header>
+    <div id="selection-options"></div>
+  </dialog>
+  <dialog id="personal-center" aria-labelledby="personal-title">
+    <header class="personal-header"><div><h2 id="personal-title">个人中心</h2><p id="account-caption">我的阅读进度</p></div><button id="close-personal-center" aria-label="关闭个人中心">×</button></header>
+    <p id="account-error" role="alert" hidden></p>
+    <section id="account-guest" hidden>
+      <p class="account-intro">登录后，手机和电脑可以接着读。</p>
+      <div class="account-tabs" role="group" aria-label="账号操作"><button id="account-login-tab" aria-pressed="true">登录</button><button id="account-register-tab" aria-pressed="false">注册账号</button></div>
+      <form id="account-form">
+        <label id="account-display-name-label" hidden>昵称<input id="account-display-name" name="nickname" required disabled maxlength="24" autocomplete="nickname" placeholder="请输入昵称"></label>
+        <label>用户名<input id="account-username" name="username" required minlength="3" maxlength="32" pattern="[A-Za-z0-9_\-]{3,32}" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="字母、数字、下划线或短横线"></label>
+        <label>密码<input id="account-password" name="password" type="password" required minlength="8" maxlength="128" autocomplete="current-password" placeholder="至少 8 个字符"></label>
+        <label id="account-import-label" class="account-check" hidden><input id="account-import" type="checkbox">带入此浏览器的阅读进度、录音和评分</label>
+        <button id="account-submit" type="submit">登录并同步</button>
+        <button id="account-cancel-add" type="button" hidden>取消添加</button>
+      </form>
+    </section>
+    <section id="account-member" hidden><div class="account-member-info"><div class="account-name-row"><strong id="account-name"></strong><button id="account-edit-name" type="button">修改昵称</button></div><span id="account-username-caption"></span></div><button id="account-logout">退出账号</button></section>
+    <form id="account-profile-form" hidden><label>昵称<input id="account-profile-name" name="nickname" required maxlength="24" autocomplete="nickname" placeholder="请输入昵称"></label><div><button id="account-profile-save" type="submit">保存</button><button id="account-profile-cancel" type="button">取消</button></div></form>
+    <section id="account-switcher" hidden><div class="account-switch-heading"><h3>切换账号</h3><button id="account-add">＋ 添加账号</button></div><div id="saved-accounts"></div></section>
+    <section class="reading-records" aria-label="阅读记录">
+      <div class="reading-stats"><span>未开始 <strong id="stat-new">0</strong></span><span>正在读 <strong id="stat-reading">0</strong></span><span>已读完 <strong id="stat-completed">0</strong></span><small>本机阅读记录</small></div>
+      <div id="continue-panel" hidden><div><small id="continue-level"></small><h2 id="continue-title"></h2><p id="continue-page"></p></div><button id="continue-reading">继续阅读 ›</button></div>
+    </section>
+    <section class="personal-section"><div class="personal-section-heading"><h3>各等级进度</h3><button id="show-audio-overview">音频说明</button></div><p id="level-progress" aria-live="polite"></p><div id="personal-levels"></div></section>
+    <section class="personal-section"><h3>我的阅读记录</h3><p id="personal-empty">选一本书，开始你的阅读记录。</p><div id="personal-books"></div></section>
+  </dialog>
+  <dialog id="audio-overview" aria-labelledby="audio-overview-title">
+    <header><h2 id="audio-overview-title">书库里的音频</h2><button id="close-audio-overview" aria-label="关闭音频说明">关闭</button></header>
+    <p id="audio-overview-summary"></p>
+    <p>优先播放绘本原声。页音频跟随页面；准确定位到句子的原声才作为句子点读。版权页等无配音页面仍可正常阅读。</p>
+    <div class="audio-table-wrap"><table><thead><tr><th>绘本</th><th>等级</th><th>音频状态</th><th>说明</th></tr></thead><tbody id="audio-overview-books"></tbody></table></div>
+  </dialog>
+  <main id="reader" hidden>
+    <header class="reader-header">
+      <button id="back">‹ 返回书架</button>
+      <div class="book-heading"><h1 id="reading-title"></h1><span id="reading-subtitle"></span><div class="page-context"><span id="page-number" aria-live="polite">正在打开…</span><button id="retry-reader" hidden>重新打开</button><div id="sentence-player" hidden><button id="stop-sentence" aria-label="关闭原声提示" title="停止朗读"><svg class="speech-wave" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M3 10v4M7.5 6v12M12 3v18M16.5 6v12M21 10v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button><span id="sentence-status" role="status"></span><audio id="sentence-audio" hidden></audio></div></div></div>
+      <div class="reading-save"><span id="saved" role="status">本地保存</span><button id="retry-progress" hidden>重试保存</button><button id="complete">✓ 标记读完</button></div>
+    </header>
+    <div class="reading-workspace">
+      <div class="reading-body"><button id="prev" class="page-arrow" aria-label="上一页">‹</button><iframe id="pdf-frame" title="绘本 PDF 阅读器"></iframe><div id="image-reader" hidden><img id="page-image" alt="绘本当前页"></div><button id="next" class="page-arrow" aria-label="下一页">›</button>
+      <aside id="page-translation" aria-label="本页译文" hidden>
+        <button id="close-translation" aria-label="收起译文">×</button>
+        <div id="translation-scroll" tabindex="0" aria-label="本页译文内容">
+          <div id="translation-result"></div>
+          <div class="translation-feedback"><span id="translation-status" role="status"></span><button id="retry-translation" hidden>重试翻译</button></div>
+        </div>
+      </aside>
+      </div>
+    </div>
+    <footer class="reader-controls">
+
+      <div class="reader-actions" aria-label="阅读工具">
+        <button id="translate-page" aria-label="翻译全文" aria-expanded="false" aria-controls="page-translation" title="翻译当前页全文"><span class="wide-label">翻译全文</span><span class="compact-label" aria-hidden="true">译</span></button><small id="word-lookup-hint" hidden></small>
+        <div class="listen-actions" role="group" aria-label="朗读"><button id="play" disabled>朗读</button></div>
+        <div class="speak-actions" role="group" aria-label="跟读">
+          <button id="record">跟读</button><button id="stop-record" disabled hidden aria-label="停止录音" title="停止录音">■</button><span id="recording-countdown" role="timer" aria-label="录音剩余时间" hidden></span>
+          <div id="recording-player" role="group" aria-label="我的录音回放" hidden>
+            <button id="recording-play" aria-label="播放我的录音" title="播放我的录音"><svg class="recording-wave" viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M3 10v4M7.5 6v12M12 3v18M16.5 6v12M21 10v4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+          </div>
+        </div>
+        <button id="assess-recording" class="assessment-button" aria-live="polite" aria-expanded="false" aria-controls="assessment-details" hidden>评测</button>
+        <div class="reading-options"><select id="reading-speed" aria-label="朗读语速" title="朗读语速"><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option></select><label class="auto-label" title="自动翻页"><input id="autoplay" type="checkbox" aria-label="自动翻页"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path d="M4 4h11v16H4zM18 7l3 3-3 3m-5-3h8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg><span class="wide-label">自动翻页</span></label></div>
+      </div>
+      <p id="assessment-status" role="status" hidden></p>
+      <div class="audio-timeline" aria-hidden="true"><span id="audio-status" role="status">本页无可用音频</span><input tabindex="-1" id="audio-seek" type="range" min="0" max="1" step="0.01" value="0" aria-label="朗读进度" disabled><span id="audio-time">0:00 / 0:00</span><audio id="narration" hidden preload="metadata"></audio></div>
+      <div id="point-reading" class="point-reading" role="group" aria-label="本页音频点读"></div>
+      <div class="record-controls"><audio id="recording" hidden preload="none"></audio><button id="retry-recording" hidden>重试录音保存 / 读取</button><span id="record-status" class="sr-only" role="status">每页录音保存在本机，仅保留最新一条</span></div>
+    </footer>
+
+  </main>
+  <aside id="assessment-reward" role="status" hidden>
+    <canvas id="assessment-confetti" aria-hidden="true"></canvas>
+    <div id="assessment-reward-stars" aria-hidden="true"></div>
+    <svg class="reward-medal" viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="45" fill="#eee8fb"/><circle cx="50" cy="50" r="37" fill="#8268db"/><path d="M32 26h36v20c0 25-36 25-36 0z" fill="#ffda69"/><path d="M32 31H22v9q0 13 15 13M68 31h10v9q0 13-15 13" fill="none" stroke="#ffda69" stroke-width="5"/><path d="M50 63v13m-12 0h24" stroke="#ffda69" stroke-width="6" stroke-linecap="round"/><path d="m50 32 3 7 8 1-6 5 2 8-7-4-7 4 2-8-6-5 8-1z" fill="#fff5cd"/></svg>
+    <strong id="assessment-cheer"></strong>
+  </aside>
+  <dialog id="assessment-details" aria-labelledby="assessment-title">
+    <header><h2 id="assessment-title">跟读反馈</h2><button id="close-assessment" aria-label="关闭跟读反馈" autofocus>×</button></header>
+    <div id="assessment-body">
+    <div class="assessment-overview">
+      <div id="assessment-score-ring"><div><strong id="assessment-score"></strong><small>满分 100</small></div></div>
+      <div class="assessment-overview-content"><h3 id="assessment-summary"></h3><p id="assessment-tip"></p><div id="assessment-words" aria-label="跟读单词反馈"></div></div>
+    </div>
+    <div class="assessment-comparison">
+    <div id="assessment-word-help" hidden><strong id="assessment-word"></strong><span id="assessment-phonetic"></span><span id="assessment-word-status" role="status"></span></div>
+    <section id="assessment-phones" aria-label="发音逐音对照" hidden>
+      <div class="phone-caption"><span>上排：目标音 · 下排：识别音</span><span>红色建议练习</span></div>
+      <div id="assessment-phone-list"></div>
+      <p id="assessment-phone-note" role="status"></p>
+    </section>
+    <button id="assessment-demo" class="assessment-demo">听单词示范</button>
+    </div>
+    <p class="assessment-disclaimer">自动识别可能有误，音标对照仅供练习参考。</p>
+    </div>
+    <footer><button id="assessment-practice">再读一次</button><button id="assessment-replay">回放我的录音</button></footer>
+    <audio id="assessment-word-audio" hidden></audio>
+  </dialog>
+  <aside id="word-popover" role="dialog" aria-label="单词释义" hidden>
+    <header><strong id="popover-word"></strong><button id="close-word-popover" aria-label="关闭词义">×</button></header>
+    <div id="popover-phonetic"></div>
+    <div id="popover-meanings" role="status"></div>
+    <footer><button id="popover-pronounce" disabled title="本机生成的英文单词发音">发音</button><span id="popover-speech-status" role="status"></span></footer>
+    <small>ECDICT 词典释义</small><audio id="popover-audio" hidden></audio>
+  </aside>
+  <div id="message" role="alert" hidden></div>
+</body>
+</html>
