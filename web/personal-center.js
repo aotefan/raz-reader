@@ -1,4 +1,3 @@
-// Keep legacy storage keys so the project rename preserves existing reading preferences and pending writes.
 import { readingState, mostRecentFirst } from '/reading.js';
 import { scopeHeaders } from '/identity.js';
 const $ = id => document.getElementById(id);
@@ -129,6 +128,9 @@ export function personalCenter({ openBook, getLevel, beforeAuth }) {
       $('open-personal-center').setAttribute('aria-label', `${entryLabel}，进入个人中心`);
       $('account-caption').textContent = value.account ? '每次打开，都从上次继续' : value.accounts_enabled ? '游客阅读 · 登录后可跨设备同步' : '本机阅读进度';
       document.querySelector('.reading-stats small').textContent = value.account ? '此账号的阅读记录' : value.accounts_enabled ? '游客记录保存在此浏览器对应的空间' : '本机阅读记录';
+      if (value.mode === 'local_sync') document.querySelector('.reading-stats small').textContent =
+        !value.account ? '本机评分 · 登陆后同步阅读记录' : value.sync_pending || !value.sync_online
+          ? '本机评分 · 有记录待同步，联网后自动重试' : '本机评分 · 进度、录音和成绩已同步';
       $('personal-levels').replaceChildren();
       for (const level of value.levels) {
         const books = value.books.filter(b => !b.demo && b.level === level.level);

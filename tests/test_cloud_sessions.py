@@ -13,12 +13,12 @@ class CloudSessionTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        self.sessions = CloudSessions(self.root, 'https://reader.example.com')
+        self.sessions = CloudSessions(self.root, 'https://raz.aotefan.com')
 
     def test_cookie_is_signed_persistent_and_cannot_select_another_directory(self):
         directory, cookie = self.sessions.resolve(None, create=True)
         self.assertIn('HttpOnly; Secure; SameSite=Strict', cookie)
-        self.assertEqual(CloudSessions(self.root, 'https://reader.example.com').resolve(cookie), (directory, None))
+        self.assertEqual(CloudSessions(self.root, 'https://raz.aotefan.com').resolve(cookie), (directory, None))
         for bad in (f'{COOKIE}=../../owner', f'{COOKIE}={directory.name}.fake', None):
             self.assertEqual(self.sessions.resolve(bad), (None, None))
         other, _ = self.sessions.resolve(None, create=True)

@@ -58,6 +58,8 @@ def connect(data):
         completed INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);
       CREATE TABLE IF NOT EXISTS progress_writers (edition_id TEXT NOT NULL, writer_id TEXT NOT NULL,
         last_sequence INTEGER NOT NULL, PRIMARY KEY (edition_id, writer_id));
+      CREATE TABLE IF NOT EXISTS completions (edition_id TEXT NOT NULL, day TEXT NOT NULL,
+        PRIMARY KEY (edition_id, day));
     ''')
     return db
 

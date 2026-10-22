@@ -249,6 +249,9 @@ select{font:inherit;color:inherit;min-height:44px;border:1px solid #dce3dc;borde
 #assessment-details>header,#assessment-details>footer{flex:0 0 auto}
 #assessment-body{min-height:0;overflow:auto;overscroll-behavior:contain;margin:12px -6px 0;padding:0 6px;scrollbar-gutter:stable}
 #assessment-details>footer{background:#fffefa;padding-top:14px;margin-top:8px}
+#assessment-narrate{white-space:nowrap}
+#assessment-next{margin-left:auto;min-width:40px;padding-inline:12px}
+@media(max-width:600px){#assessment-details>footer button{padding:10px;font-size:12px}}
 @media(max-width:600px){#assessment-details{max-height:calc(100dvh - 24px)}#assessment-details>footer{padding-top:12px}}
 /* Public cloud reading has no microphone uploads or desktop model endpoints. */
 .cloud-reading .speak-actions,
@@ -259,5 +262,11 @@ select{font:inherit;color:inherit;min-height:44px;border:1px solid #dce3dc;borde
 .cloud-reading #word-lookup-hint,
 .cloud-reading .book-rating { display: none !important; }
 
-/* Compact RAZ wordmark; retain the original touch target and star. */
+/* Keep the RAZ monogram compact at desktop and mobile sizes. */
 .brand .brand-icon{font-size:12px;letter-spacing:.5px;font-weight:800}
+.brand-heading{font:inherit;margin:0;flex-shrink:0}
+.reader-intro{grid-column:1/-1;margin-top:32px;border-top:1px solid #e1e5dc;padding-top:20px;font-size:12px;line-height:1.8;color:#74836f}
+.reader-intro h2{font-size:14px;margin:0 0 8px;color:#536c59}
+.reader-intro p{margin:0 0 12px;max-width:640px}
+.reader-intro nav{display:flex;flex-wrap:wrap;gap:10px 20px}
+.reader-intro a{text-decoration:none}.reader-intro a:hover{text-decoration:underline}

@@ -33,6 +33,7 @@ class CombinedUploadTests(unittest.TestCase):
 
         def assess(_, edition, page, version, text, recordings=None):
             owner.calls += 1
+            owner.assertEqual(text, 'I plant a little seed.')
             owner.assertEqual(recordings.read(edition, page)[1], sample())
             owner.entered.set()
             if not owner.release.wait(5):
@@ -46,6 +47,7 @@ class CombinedUploadTests(unittest.TestCase):
 
         self.patches = [patch('engine.server.ReaderHTTPServer', Server),
                         patch('engine.server.Assessment.warmup'),
+                        patch('engine.server.ReadingText.reference', return_value={'text':'I plant a little seed.'}),
                         patch('engine.server.Assessment.run', assess)]
         for p in self.patches: p.start()
         # Port 0 chooses a free port; the handler's local Host allowlist remains :0.
@@ -100,6 +102,26 @@ class CombinedUploadTests(unittest.TestCase):
         self.assertTrue(result['saved'])
         self.assertEqual(result['assessment_error'], self.failure)
         self.assertEqual(Recordings(self.root).read('edition', 1)[1], sample())
+
+    def test_browser_supplied_gibberish_is_never_the_scoring_reference(self):
+        self.release.set()
+        result=json.loads(self.upload(self.reserve(),reference='n uo o ll').read())
+        self.assertEqual(result['assessment']['reference'],'I plant a little seed.')
+
+    def test_uncertain_page_saves_audio_without_running_model(self):
+        with patch('engine.server.ReadingText.reference',side_effect=ValueError('本页正文未确认')):
+            result=json.loads(self.upload(self.reserve(),reference='n uo o ll').read())
+        self.assertTrue(result['saved']);self.assertEqual(result['assessment_error'],'本页正文未确认')
+        self.assertEqual(self.calls,0)
+        self.assertEqual(Recordings(self.root).read('edition',1)[1],sample())
+
+    def test_direct_assessment_cannot_bypass_reference_validation(self):
+        self.upload(self.reserve(),reference=None).read()
+        with patch('engine.server.ReadingText.reference',side_effect=ValueError('本页正文未确认')):
+            response=self.request('/api/assessment',json.dumps({'edition_id':'edition','page':1,'version':1,'text':'n uo o ll'}).encode(),
+                                  {'Content-Type':'application/json'})
+            self.assertEqual(response.status,400);self.assertIn('正文未确认',json.loads(response.read())['error'])
+        self.assertEqual(self.calls,0)
 
     def test_legacy_and_stale_uploads_never_start_scoring(self):
         version = self.reserve()

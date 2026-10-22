@@ -119,12 +119,15 @@ class CloudSessions:
     def save(self, recordings, edition, page, version, mime, audio):
         # Serialize quota checks with saves, including writes by other visitors.
         with self.lock:
-            with recordings.connection() as db:
-                used = db.execute('SELECT COALESCE(SUM(length(audio)),0) FROM recordings').fetchone()[0]
-                previous = db.execute('SELECT length(audio) FROM recordings WHERE edition=? AND page=?',
-                                      (edition, page)).fetchone()
-            if used - ((previous[0] or 0) if previous else 0) + len(audio) > 128 * 1024**2:
-                raise ValueError('你的录音空间已满，请稍后再试。')
-            if self.disk_usage() + len(audio) > 2 * 1024**3:
-                raise ValueError('录音空间暂时已满，请稍后再试。')
+            self.check_recording_quota(recordings, edition, page, len(audio))
             return recordings.save(edition, page, version, mime, audio)
+
+    def check_recording_quota(self, recordings, edition, page, size):
+        with recordings.connection() as db:
+            used = db.execute('SELECT COALESCE(SUM(length(audio)),0) FROM recordings').fetchone()[0]
+            previous = db.execute('SELECT length(audio) FROM recordings WHERE edition=? AND page=?',
+                                  (edition, page)).fetchone()
+        if used - ((previous[0] or 0) if previous else 0) + size > 128 * 1024**2:
+            raise ValueError('你的录音空间已满，请稍后再试。')
+        if self.disk_usage() + size > 2 * 1024**3:
+            raise ValueError('录音空间暂时已满，请稍后再试。')

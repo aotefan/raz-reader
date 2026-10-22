@@ -1,9 +1,14 @@
-// Keep legacy storage keys so the project rename preserves existing reading preferences and pending writes.
 // A small local outbox: only book identifiers and progress, never reading media.
 const PREFIX = 'little-reader:pending:';
 const streams = new Map();
 let browserOnly = false;
 let scope = 'local';
+// A reading day is shared by all devices. A device's system timezone must
+// not move China's morning completions into yesterday or reset them at noon.
+export const READING_TIME_ZONE = 'Asia/Shanghai';
+const readingDate = new Intl.DateTimeFormat('en', {
+  timeZone: READING_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+});
 const keyFor = edition => PREFIX + (scope === 'local' ? '' : scope + ':') + edition;
 export function configureProgress(options = {}) {
   browserOnly = options.browserOnly === true;
@@ -39,7 +44,11 @@ export function pendingProgress(books) {
     } catch { return []; }
   });
 }
-export function captureProgress(book, page) {
+export function localDay(date = new Date()) {
+  const parts = Object.fromEntries(readingDate.formatToParts(date).map(part => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}`;
+}
+export function captureProgress(book, page, complete = false) {
   let stream = streams.get(book.edition_id);
   const pending = pendingProgress([book])[0];
   if (!stream) {
@@ -47,9 +56,13 @@ export function captureProgress(book, page) {
     streams.set(book.edition_id, stream);
   }
   if (pending?.body.writer_id === stream.writer) stream.sequence = Math.max(stream.sequence, pending.body.sequence);
+  // Opening an already completed last page is not a new completion. Explicit
+  // marking, or reaching the last page from another page, counts once per day.
+  const finished = complete || (page === book.page_count && (!book.progress.completed || book.progress.page !== page));
+  const days = [...new Set([...(pending?.body.completion_days || []), ...(finished ? [localDay()] : [])])];
   const body = { edition_id: book.edition_id, page,
     completed: Boolean(book.progress.completed || page === book.page_count),
-    writer_id: stream.writer, sequence: ++stream.sequence, read_at: new Date().toISOString(), reader_scope: scope };
+    completion_days: days, writer_id: stream.writer, sequence: ++stream.sequence, read_at: new Date().toISOString(), reader_scope: scope };
   const serialized = JSON.stringify(body);
   let backedUp = false;
   try { localStorage.setItem(keyFor(book.edition_id), serialized); backedUp = true; } catch { /* Server save still works. */ }

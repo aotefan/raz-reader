@@ -87,3 +87,23 @@ An absent/busy Mac goes directly to the server; an interrupted assigned job fall
 ## 4. Low-memory tuning
 
 The source includes an optional compact-model exporter and parity checker. They preserve the existing model's scoring method, but need to be validated on your installed model/runtime and recordings. Inspect their `--help` and [architecture notes](ARCHITECTURE.md); do not assume the private deployment's memory limits are appropriate for your host. No production Compose file, IP address, resource path or machine credential is shipped in this release.
+
+## 5. Read on localhost and synchronize to your own cloud
+
+Update both installations to the same source version. Import the same original PDF editions separately on the local machine and server; copying manifests between machines is not supported. Install the local scoring model using `./scripts/setup_assessment.sh`. Then start the local reader with your own HTTPS origin:
+
+```bash
+RAZ_SYNC_ORIGIN=https://reader.example.com ./scripts/start.sh
+```
+
+Open `http://127.0.0.1:8765` and sign in to the account used on your deployment. PDFs and scoring stay local; account progress, completion days, recordings and saved results synchronize with that deployment. The service remains bound to loopback. Initial sign-in requires connectivity; pending writes are retained for retries after a network interruption. Do not clear the private `data/local-sync/` state while uploads are pending. The personal center displays synchronization status.
+
+On a phone, open your HTTPS deployment and use the same account. Recordings/results synchronize for matching PDF editions, each page keeping the latest take. Synchronization transfers private audio and results; it does not upload your book library. The local bridge is independent of the Mac task worker and does not need its worker key. Remove `RAZ_SYNC_ORIGIN` to return to the separate local-only profile. Nothing is connected by default.
+
+To precompute references for imported pages before practice, optionally run:
+
+```bash
+python3 scripts/prepare_reading_text.py --data data
+```
+
+The default range is AA–H; use `--levels` for other grades or `--manifest` if the manifest is elsewhere. Cache and review output stay under the private data directory. Uncertain pages remain uncertain; this command does not guess text or modify source PDFs.

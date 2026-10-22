@@ -6,11 +6,11 @@ RAZ Reader is a browser application with a Python API and optional local model w
 
 ## Reading and language tools
 
-`web/app.js` owns the bookshelf and reading state. `web/reader-boot.js` adapts the official PDF.js viewer in an iframe. PDFs stay unchanged. The frontend reads native text first; image-only pages fall back to Poppler rendering and Tesseract OCR through `engine/page_text.py`. Position-aware text filtering removes page furniture before translation or assessment.
+`web/app.js` owns the bookshelf and reading state. `web/reader-boot.js` adapts the official PDF.js viewer in an iframe. PDFs stay unchanged. `engine/reading_text.py` supplies a canonical reading reference shared by translation and assessment, bound to the PDF hash, page and extraction policy. Native text is checked; image-only or unreliable pages use Poppler/Tesseract with multiple OCR passes and position-aware body selection. When whole-page layout discovery misses a caption, overlapping horizontal strips are scanned before applying the same consensus checks. Uncertain references are not cached as accepted text, and recordings remain available without a score. Reopening a saved score checks its reference and can re-evaluate the same take when the reference changes.
 
-`engine/language.py` invokes bounded subprocesses for translation and generated single-word audio. Translation uses the Argos English-to-Chinese model through CTranslate2 and SentencePiece. ECDICT is a local read-only SQLite dictionary. These optional downloads are installed separately and are never fetched by the browser.
+`engine/language.py` invokes bounded subprocesses for translation and generated single-word audio. Translation uses the Argos English-to-Chinese model through CTranslate2 and SentencePiece. ECDICT is a local read-only SQLite dictionary. For exact article-plus-single-noun captions, the first available noun meaning avoids unreliable short-sentence model translations; other sentences retain the translation model path. These optional downloads are installed separately and are never fetched by the browser.
 
-Narration is original embedded media or content-verified external media. Sentence clips require verified timing. Visual rewards can run without spoken encouragement; the public release contains an empty voice manifest.
+The reader hides PDF media-widget overlays using external CSS; the underlying media remains accessible through the bottom narration controls. Narration is original embedded media or content-verified external media. Sentence clips require verified timing. Visual rewards can run without spoken encouragement; the public release contains an empty voice manifest.
 
 ## Accounts and persistence
 
@@ -20,12 +20,20 @@ SQLite stores account metadata and each reader's progress/recordings. Recordings
 
 Browser localStorage holds a scoped outbox of unsynchronized progress. Writer IDs and sequence numbers reject stale writes from the same writer. This is not real-time collaborative editing: simultaneous devices may compete for a last-read position.
 
+Completed-book dates are stored separately from the last-read position. The frontend assigns completion days in **Asia/Shanghai**, de-duplicates each edition/day, and refreshes counts at Beijing midnight or when the page becomes visible. UTC `read_at` timestamps retain their original instant; the device time zone does not choose the reading day.
+
+## Optional local reading with cloud synchronization
+
+An explicitly configured `--sync-origin` enables `engine/local_sync.py` on loopback only. The browser reads local PDFs and calls the local scorer; the bridge connects only to the configured HTTPS origin for account actions and synchronization. It is separate from the outbound Mac task worker described below. Local and cloud libraries must contain the same PDF editions.
+
+Private cloud cookies stay in owner-only local files. Progress and a durable outbox commit together; recording replication uses stable take IDs and timestamps through `engine/recording_sync.py`. Each pending write retains its account scope so switching accounts cannot redirect another reader’s recording. Missing or changed cloud takes are fetched when opening a book. Failed transfers retry; expired credentials require login. Local inference completes without waiting for cloud upload. This does not eliminate the need for network access for initial account login or synchronization.
+
 ## Pronunciation pipeline
 
 1. Capture the current page reference and record with MediaRecorder.
 2. Validate audio and save the versioned take before assessment.
 3. Reuse a cached report only for the same take, normalized reference and method.
-4. Prefer an available Mac worker; otherwise invoke the server's persistent scoring subprocess.
+4. In cloud mode, prefer an available Mac worker, otherwise use the server scorer. In localhost sync mode, invoke the local persistent scoring subprocess directly.
 5. Decode at 16 kHz mono, rebuild duration from samples, check silence/clipping, trim only edge silence.
 6. Use OpenPronounce phoneme recognition and comparison APIs, including its pronunciation tolerance.
 7. Compute `round(100 * max(0, 1 - weighted_phone_edits / expected_phone_count))`.
@@ -50,8 +58,9 @@ Mac tasks use private temporary files and remove them after use. The Mac does pr
 | Routes and bounds | `engine/server.py` |
 | Account/session isolation | `engine/accounts.py`, `engine/cloud_sessions.py`, `web/identity.js` |
 | Book metadata/progress | `engine/pipeline.py`, `web/progress.js`, `web/reading.js` |
-| Page text | `engine/page_text.py`, `web/page-translation.js` |
+| Page text | `engine/reading_text.py`, `engine/page_text.py`, `web/page-translation.js` |
 | Recording storage/UI | `engine/recordings.py`, `web/recording-assessment.js` |
+| Local/cloud synchronization | `engine/local_sync.py`, `engine/recording_sync.py` |
 | Assessment coordinator | `engine/assessment.py`, `engine/assessment_process.py` |
 | Model execution | `scripts/assessment_worker.py`, `engine/compact_assessment.py` |
 | Remote broker/worker | `engine/assessment_remote.py`, `scripts/mac_assessment_worker.py` |

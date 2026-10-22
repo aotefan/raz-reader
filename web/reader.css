@@ -6,9 +6,9 @@
 :root { --body-bg-color: #eceeea; --page-margin: 0px auto; }
 .pdfViewer .page { border: 0; border-image: none; margin: 0 auto; }
 
-/* Keep original Screen annotation locations; enlarge only the upstream play hit area. */
-.annotationLayer .mediaAnnotation{overflow:visible}
-.annotationLayer .mediaPlayButton{min-width:44px;min-height:44px;border-radius:50%;background-color:#fffefaeb;box-shadow:0 2px 8px #193b3030}
+/* The bottom toolbar controls the original audio. Keep PDF.js media objects
+   in the DOM, but hide overlapping in-page buttons and native media controls. */
+.annotationLayer .mediaAnnotation{display:none!important}
 /* PDF glyphs are painted on the canvas below the transparent text layer. */
 ::highlight(raz-lookup){background-color:rgba(255,205,72,.30);color:transparent}
 ::highlight(raz-speaking){background-color:rgba(141,183,109,.28);color:transparent}

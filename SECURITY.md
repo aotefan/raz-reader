@@ -11,6 +11,11 @@ Use GitHub's **Security → Report a vulnerability** for sensitive reports. Do n
 - Accounts have separate progress, latest recordings and assessment results. Version and reader-scope checks reject stale operations after a new take or account switch.
 - Recordings are validated and bounded; the API resolves book IDs through a manifest rather than accepting arbitrary user filesystem paths. Rate limits are in-process and are not a distributed abuse-prevention service.
 - The optional Mac worker receives task audio and reference text over HTTPS with a separate credential. It opens no listening port. Temporary audio is removed after processing; private state remains on the server.
+- The optional localhost sync bridge requires an explicit HTTPS origin and only runs on loopback. It retains cloud session credentials in owner-only local files and durable per-account outboxes. Do not publish or share `data/local-sync/`; log out/forget accounts before handing the machine to another user. Credentials are never forwarded across redirects.
+
+## Runtime maintenance
+
+The service uses Python; Node.js is only used by browser tests. Before introducing or deploying PHP/Node.js, check the official release and security notices and use a supported, currently patched stable release (or the latest patched LTS for production). Check the actual host, container and build runtime versions and exercise the affected features after updating. A version pinned in CI is not a permanent security baseline and does not establish the absence of unknown vulnerabilities.
 
 No independent penetration test, server disaster recovery, automatic encrypted backup or unlimited-concurrency guarantee is implied. Restrict server administration, manage backups outside the public document root and test restoration. Serving a book to unauthenticated readers makes that book publicly accessible even if progress and recordings are private.
 

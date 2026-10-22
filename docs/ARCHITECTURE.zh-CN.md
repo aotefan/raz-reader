@@ -6,11 +6,11 @@ RAZ Reader 由浏览器界面、Python 接口、SQLite 数据和可选本地模�
 
 ## 阅读和语言工具
 
-`web/app.js` 管理书架和阅读状态，`web/reader-boot.js` 对接 iframe 内的官方 PDF.js 阅读器。原 PDF 不改写；有文字层就直接读取，没有文字层则由 Poppler 渲染当前页，再用 Tesseract 识别。前端结合位置、字号和标点过滤页码、页脚与图片干扰文字，供翻译和评分共用。
+`web/app.js` 管理书架和阅读状态，`web/reader-boot.js` 对接 iframe 内的官方 PDF.js 阅读器。原 PDF 不改写。`engine/reading_text.py` 提供翻译和评分共用的正文，绑定 PDF 哈希、页码及提取策略。有文字层先验证；图片页或不可靠文字层由 Poppler / Tesseract 多轮识别，结合位置筛选正文。整页布局检测漏掉句子时，扫描相互重叠的横向区域，仍需通过同样的一致性检查。正文不确定时保留录音、暂不评分，不把猜测写入有效缓存；重新打开旧评分时会核对正文，正文更新后可以用原录音重新评分。
 
-翻译由 `engine/language.py` 调用独立进程，通过 CTranslate2 / SentencePiece 运行 Argos 英中模型；ECDICT 是只读本地词典。单词发音由服务器 eSpeak NG 或 Mac 系统语音生成。这些模型与词库另行安装，不下载到浏览器。
+翻译由 `engine/language.py` 调用独立进程，通过 CTranslate2 / SentencePiece 运行 Argos 英中模型；ECDICT 是只读本地词典。对于精确的“冠词 + 单个名词”短句，优先使用可用的名词释义，减少短句误译；其他句子仍由翻译模型处理。单词发音由服务器 eSpeak NG 或 Mac 系统语音生成。这些模型与词库另行安装，不下载到浏览器。
 
-绘本朗读使用原内嵌音频或已核验外部音频，句级播放须有可靠时间映射。开源包的鼓励语音清单为空，视觉星级反馈仍可运行。
+外部 CSS 隐藏 PDF 上遮挡正文的媒体控件，底部朗读仍可读取其音频。绘本朗读使用原内嵌音频或已核验外部音频，句级播放须有可靠时间映射。开源包的鼓励语音清单为空，视觉星级反馈仍可运行。
 
 ## 账号与数据
 
@@ -20,12 +20,20 @@ SQLite 保存账号信息及每位读者的进度、录音和评分。录音以�
 
 浏览器 localStorage 暂存尚未同步的进度；写入者 ID 和序号防止同一设备的旧请求倒退覆盖。它不是实时协作系统，多台设备同时读同一账号仍可能竞争最后阅读位置。
 
+读完日期与最后阅读位置分开保存。前端以 **Asia/Shanghai** 记录完成日期，每个版本每天去重，按北京时间零点或页面恢复可见时更新统计。UTC 的 `read_at` 保留原始时刻，设备所在时区不决定统计日期。
+
+## 可选本机阅读与云端同步
+
+明确设置 `--sync-origin` 后，`engine/local_sync.py` 仅在回环地址启用。浏览器读取本机 PDF、直接调用本机评分，桥接只连接配置的 HTTPS 服务进行账号操作和数据同步；这与下方的 Mac 领取任务进程是两个独立入口。本地与云端需导入相同 PDF 版本。
+
+云端 Cookie 留在仅当前用户可读的本机文件里。进度和待同步队列一起提交；`engine/recording_sync.py` 通过稳定的录音 ID 和时间戳复制录音及评分。排队写入保留原账号范围，切换账号不会把另一人的录音写给新账号；打开书时拉取缺少或更新的云端录音。失败的传输会重试，凭据过期需要重新登录；本机出分不等待上传。首次登录和同步仍需要联网。
+
 ## 发音评分
 
 1. 取得当前页正文，浏览器录音。
 2. 后端验证并保存带版本号的录音，然后开始评测。
 3. 只复用同一录音、正文及算法版本的缓存。
-4. 有可用 Mac 时优先交给 Mac，否则走服务器常驻模型。
+4. 云端模式有可用 Mac 时优先交给 Mac，否则走服务器常驻模型；本机同步模式直接使用本机常驻模型。
 5. 解码为 16 kHz 单声道，按采样数修正时长，检查静音和失真，只裁首尾静音。
 6. 复用 OpenPronounce 音素识别与对照能力，包括原有发音容错。
 7. 按 `round(100 × max(0, 1 − 加权音素误差 / 目标音素数量))` 计算分数。
@@ -50,8 +58,9 @@ Mac 临时处理用户录音，用完清理临时文件；账号和最终结果�
 | API 与请求边界 | `engine/server.py` |
 | 账号与会话 | `engine/accounts.py`、`engine/cloud_sessions.py`、`web/identity.js` |
 | 书目与进度 | `engine/pipeline.py`、`web/progress.js`、`web/reading.js` |
-| 页面正文 | `engine/page_text.py`、`web/page-translation.js` |
+| 页面正文 | `engine/reading_text.py`、`engine/page_text.py`、`web/page-translation.js` |
 | 录音与反馈 | `engine/recordings.py`、`web/recording-assessment.js` |
+| 本机与云端同步 | `engine/local_sync.py`、`engine/recording_sync.py` |
 | 模型调度 | `engine/assessment.py`、`engine/assessment_process.py` |
 | 模型执行 | `scripts/assessment_worker.py`、`engine/compact_assessment.py` |
 | Mac 分发与领取 | `engine/assessment_remote.py`、`scripts/mac_assessment_worker.py` |

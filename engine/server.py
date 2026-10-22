@@ -1,5 +1,8 @@
 """Loopback-only reader. IDs resolve to a fixed manifest allowlist, never URL paths."""
 import argparse
+import base64
+import hashlib
+from datetime import date, datetime, timedelta, timezone
 import json
 import mimetypes
 import re
@@ -14,8 +17,10 @@ from engine.recordings import MAX_BYTES, Recordings
 from engine.assessment import Assessment, reference_text
 from engine.dictionary import lookup
 from engine.language import LanguageTools
-from engine.page_text import PageText
+from engine.reading_text import ReadingText
 from engine.sentence_audio import render_original_clip
+from engine.local_sync import LocalSync, SyncUnavailable
+from engine.recording_sync import MAX_MESSAGE, pack, unpack
 
 
 class ReaderHTTPServer(ThreadingHTTPServer):
@@ -44,7 +49,7 @@ class ReaderHTTPServer(ThreadingHTTPServer):
             self.slots.release()
 
 
-def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None):
+def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None, sync_origin=None):
     data = Path(data).resolve()
     manifest = json.loads((Path(manifest_path) if manifest_path else data / 'manifest.json').read_text())
     books = {b['book_id']: b for b in manifest['books']}
@@ -52,8 +57,18 @@ def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None)
     recordings = Recordings(data)
     assessment = Assessment(data, recordings, timeout=150 if cloud_origin else 120)
     language = LanguageTools(data)
-    page_text = PageText(data)
+    page_text = ReadingText(data)
+    schema_hashes = []
+    for name in ('index.html', 'about/index.html', 'guide/index.html', 'en/index.html'):
+        path = APP / 'web' / name
+        if path.is_file():
+            for schema in re.findall(r'<script type="application/ld\+json">(.*?)</script>', path.read_text(), re.S):
+                schema_hashes.append("'sha256-" + base64.b64encode(hashlib.sha256(schema.encode()).digest()).decode() + "'")
+    schema_policy = ' '.join(schema_hashes)
     cloud = None
+    if sync_origin and (cloud_origin or listen != '127.0.0.1'):
+        raise ValueError('Progress sync is only available on the local loopback reader')
+    sync = LocalSync(data, sync_origin) if sync_origin else None
     if cloud_origin:
         from engine.cloud_sessions import CloudSessions
         cloud = CloudSessions(data, cloud_origin)
@@ -76,9 +91,10 @@ def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None)
             self.data, self.recordings, self.session_cookie = data, recordings, None
             self.reader_scope, self.account = 'local', None
             self.extra_cookies = []
+            self.sync_state = self.sync_id = self.sync_error = None
 
         def log_message(self, fmt, *args):
-            if cloud:
+            if cloud or sync:
                 return  # No visitor identifiers, words or recording URLs in logs.
             if len(args) > 1 and str(args[1]) not in ('200', '206', '304'):
                 super().log_message(fmt, *args)
@@ -114,7 +130,7 @@ def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None)
                 supplied = self.headers.get('X-Reader-Scope')
                 if route.startswith('/api/recordings/') and self.command in ('GET', 'HEAD'):
                     supplied = parse_qs(urlsplit(self.path).query).get('scope', [supplied])[0]
-                private = route.startswith(('/api/recordings/', '/api/account/')) or route == '/api/assessment'
+                private = route.startswith(('/api/recordings/', '/api/recording-sync', '/api/account/')) or route == '/api/assessment'
                 if supplied is not None and supplied != self.reader_scope:
                     return False
                 if self.account and private and supplied != self.reader_scope:
@@ -123,7 +139,33 @@ def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None)
             if self.headers.get('Host') not in (f'127.0.0.1:{port}', f'localhost:{port}'):
                 return False
             origin = self.headers.get('Origin')
-            return origin is None or origin in (f'http://127.0.0.1:{port}', f'http://localhost:{port}')
+            local_origins = (f'http://127.0.0.1:{port}', f'http://localhost:{port}')
+            if (origin not in (None, *local_origins) or self.headers.get('Sec-Fetch-Site') == 'cross-site'
+                    or (sync and self.command == 'POST' and origin not in local_origins)):
+                return False
+            route = urlsplit(self.path).path
+            if sync and route.startswith('/api/'):
+                try:
+                    self.sync_id, self.sync_state, self.session_cookie = sync.resolve(
+                        self.headers.get('Cookie'), refresh=route == '/api/library')
+                except SyncUnavailable as error:
+                    self.sync_error = str(error)
+                    return True
+                if self.sync_state is None:
+                    return False
+                self.data = sync.directory(self.sync_state)
+                self.recordings = sync.recordings(self.sync_state)
+                self.reader_scope = self.sync_state['library']['reader_scope']
+                self.account = self.sync_state['library'].get('account')
+                supplied = self.headers.get('X-Reader-Scope')
+                if route.startswith('/api/recordings/') and self.command in ('GET', 'HEAD'):
+                    supplied = parse_qs(urlsplit(self.path).query).get('scope', [supplied])[0]
+                private = route.startswith(('/api/recordings/', '/api/recording-sync', '/api/account/')) or route == '/api/assessment'
+                if supplied is not None and supplied != self.reader_scope:
+                    return False
+                if self.account and private and supplied != self.reader_scope:
+                    return False
+            return True
 
         def respond_headers(self, status, content_type, length, extra=None):
             self.send_response(status)
@@ -144,7 +186,7 @@ def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None)
                 self.send_header('Set-Cookie', cookie)
             self.send_header('Cross-Origin-Resource-Policy', 'same-origin')
             self.send_header('Permissions-Policy', 'microphone=(self)')
-            self.send_header('Content-Security-Policy', "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' blob:; font-src 'self' data:; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'none'")
+            self.send_header('Content-Security-Policy', f"default-src 'self'; script-src 'self' 'wasm-unsafe-eval' {schema_policy}; style-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; worker-src 'self' blob:; connect-src 'self' blob:; font-src 'self' data:; object-src 'none'; frame-ancestors 'self'; base-uri 'self'; form-action 'none'")
             for k, v in (extra or {}).items():
                 self.send_header(k, v)
             self.end_headers()
@@ -204,7 +246,10 @@ def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None)
             self.wfile.write(b'{"saved":true,"stale":false,')
             self.wfile.flush()
             try:
-                text = reference_text(unquote(reference, encoding='utf-8', errors='strict'))
+                # The browser's OCR/text is never an authoritative answer key.
+                # Preserve the saved audio even when this page cannot be read.
+                reference_text(unquote(reference, encoding='utf-8', errors='strict'))
+                text = page_text.reference(editions[edition], page)['text']
                 result = {'assessment': assessment.run(edition, page, version, text,
                                                        recordings=self.recordings)}
             except (ValueError, RuntimeError) as error:
@@ -291,6 +336,8 @@ def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None)
         def do_GET(self):
             if not self.allowed():
                 return self.json({'error': '请刷新网页重试；仅允许本站请求。'}, 403)
+            if self.sync_error:
+                return self.json({'error': self.sync_error}, 503)
             route = urlsplit(self.path).path
 
             try:
@@ -316,11 +363,25 @@ def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None)
                         return self.json(lookup(APP / 'data/dictionary/ecdict.sqlite3', word))
                     except ValueError as error:
                         return self.json({'error': str(error)}, 400)
+                if route.startswith('/api/recording-sync/'):
+                    if not cloud or not self.account:
+                        return self.json({'error': 'Login required'}, 403)
+                    edition, page, take = self.recording_route(route.replace('/api/recording-sync/', '/api/recordings/', 1))
+                    if page is None or take:
+                        raise ValueError('Recording page required')
+                    exported = self.recordings.sync_export(edition, page)
+                    if not exported:
+                        return self.json({'error': 'No saved recording'}, 404)
+                    payload = pack(*exported)
+                    self.respond_headers(200, 'application/vnd.raz.recording', len(payload))
+                    return self.wfile.write(payload)
                 if route.startswith('/api/recordings/'):
                     edition, page, take = self.recording_route(route)
                     if take:
                         return self.json({'error': 'Unknown endpoint'}, 404)
                     if page is None:
+                        if sync:
+                            sync.pull_recordings(self.sync_state, edition)
                         return self.json({'pages': self.recordings.list(edition)})
                     recording = self.recordings.playback(edition, page)
                     if not recording:
@@ -333,10 +394,23 @@ def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None)
                     progress = {r[0]: {'page': r[1], 'completed': bool(r[2]), 'updated_at': r[3], 'visited': True}
                                 for r in db.execute('SELECT * FROM progress')}
                     writers = {}
+                    completions = {}
+                    for edition_id, day in db.execute('SELECT edition_id, day FROM completions'):
+                        completions.setdefault(edition_id, []).append(day)
                     for edition_id, writer_id, last_sequence in db.execute('SELECT * FROM progress_writers'):
                         writers.setdefault(edition_id, {})[writer_id] = last_sequence
                     db.commit()
                     db.close()
+                    if sync:
+                        pending = sync.pending(self.data)
+                        recording_pending = sync.recording_pending(self.data)
+                        for remote_book in self.sync_state['library']['books']:
+                            edition = remote_book['edition_id']
+                            if (self.account and self.sync_state.get('online') and edition not in pending):
+                                progress[edition] = remote_book['progress']
+                            if self.account and remote_book.get('assessment_summary') and not recording_pending:
+                                assessment_summaries[edition] = remote_book['assessment_summary']
+                            completions[edition] = sorted(set(completions.get(edition, []) + (remote_book.get('completion_days') or [])))
                     # No absolute private paths or unverified stream refs in browser API.
                     public = []
                     for b in books.values():
@@ -349,6 +423,7 @@ def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None)
                         rec['local_text_processing'] = 'user_enabled'
                         rec['progress'] = progress.get(b['edition_id'], {'page': 1, 'completed': False})
                         rec['assessment_summary'] = assessment_summaries.get(b['edition_id'])
+                        rec['completion_days'] = completions.get(b['edition_id'], [])
                         rec['acknowledged_writes'] = writers.get(b['edition_id'], {})
                         rec['audio'] = {**b['audio'], 'page_map': {
                             page: {'url': '/api/audio/' + a['asset_id'], 'duration': a['duration'],
@@ -376,15 +451,20 @@ def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None)
                         if cloud:
                             # Prebuilt allowlist keeps every private path out of the response.
                             safe = b['cloud_public'].copy()
-                            safe.update({k: rec[k] for k in ('progress', 'assessment_summary', 'acknowledged_writes')})
+                            safe.update({k: rec[k] for k in ('progress', 'assessment_summary', 'acknowledged_writes', 'completion_days')})
                             public[-1] = safe
-                    return self.json({'levels': manifest['levels'], 'scope': manifest.get('scope'), 'books': public,
+                    result = {'levels': manifest['levels'], 'scope': manifest.get('scope'), 'books': public,
                                       'errors': [] if cloud else manifest['errors'],
                                       'reader_scope': self.reader_scope, 'account': self.account,
                                       'saved_accounts': ([{'username': item['username'], 'display_name': item['display_name'],
                                         'active': bool(self.account and item['username'] == self.account['username'])}
                                         for item in cloud.remembered(self.headers.get('Cookie'))] if cloud else []),
-                                      **({'mode': 'cloud_full', 'accounts_enabled': True} if cloud else {})})
+                                      **({'mode': 'cloud_full', 'accounts_enabled': True} if cloud else {})}
+                    if sync:
+                        result.update(mode='local_sync', accounts_enabled=True, sync_online=self.sync_state.get('online', False),
+                            sync_pending=len(pending) + recording_pending,
+                            saved_accounts=self.sync_state['library'].get('saved_accounts') or [])
+                    return self.json(result)
                 if route.startswith('/api/page-text/'):
                     parts = route.removeprefix('/api/page-text/').split('/')
                     b = books.get(parts[0])
@@ -414,7 +494,8 @@ def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None)
                     return self.file(p)
                 if cloud:
                     return self.json({'error': 'Unknown endpoint'}, 404)
-                return self.file(contained(APP / 'web' / (route.lstrip('/') or 'index.html'), APP / 'web'))
+                resource = route.lstrip('/') + ('index.html' if route.endswith('/') else '')
+                return self.file(contained(APP / 'web' / resource, APP / 'web'))
             except (BrokenPipeError, ConnectionResetError):
                 pass
             except (OSError, ValueError):
@@ -427,10 +508,49 @@ def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None)
             if not self.allowed():
                 self.close_connection = True
                 return self.json({'error': '请刷新网页重试；仅允许本站请求。'}, 403)
+            if self.sync_error:
+                return self.json({'error': self.sync_error}, 503)
             if self.headers.get('Transfer-Encoding'):
                 self.close_connection = True
                 return self.json({'error': 'Content-Length required'}, 400)
             route = urlsplit(self.path).path
+            if route == '/api/recording-sync':
+                try:
+                    if not cloud or not self.account:
+                        self.close_connection = True
+                        return self.json({'error': 'Login required'}, 403)
+                    length = int(self.headers.get('Content-Length', '0'))
+                    if not 4 < length <= MAX_MESSAGE:
+                        raise ValueError('Invalid recording sync length')
+                    metadata, audio = unpack(self.rfile.read(length))
+                    edition, page = metadata.get('edition_id'), metadata.get('page')
+                    book = editions.get(edition) if isinstance(edition, str) else None
+                    if not book or type(page) is not int or not 1 <= page <= book['page_count']:
+                        raise ValueError('Invalid edition or page')
+                    with cloud.lock:
+                        cloud.check_recording_quota(self.recordings, edition, page, len(audio))
+                        result = self.recordings.sync_import(metadata, audio)
+                    return self.json(result)
+                except (ValueError, TypeError, KeyError) as error:
+                    self.close_connection = True
+                    return self.json({'error': str(error)}, 400)
+                except (OSError, sqlite3.Error):
+                    return self.json({'error': '录音同步暂不可用，请稍后重试。'}, 503)
+            if route.startswith('/api/account/') and sync:
+                try:
+                    length = int(self.headers.get('Content-Length', '0'))
+                    if not 0 < length <= 4096:
+                        self.close_connection = True
+                        raise ValueError('请求内容过长，请重试。')
+                    body = json.loads(self.rfile.read(length))
+                    if not isinstance(body, dict):
+                        raise ValueError('请求格式不正确。')
+                    status, result = sync.account(self.sync_id, self.reader_scope, route.removeprefix('/api/account/'), body)
+                    return self.json(result, status)
+                except (ValueError, TypeError) as error:
+                    return self.json({'error': str(error)}, 400)
+                except SyncUnavailable as error:
+                    return self.json({'error': str(error)}, 503)
             if route.startswith('/api/account/') and cloud:
                 try:
                     length = int(self.headers.get('Content-Length', '0'))
@@ -514,7 +634,8 @@ def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None)
                     book = editions.get(edition) if isinstance(edition, str) else None
                     if not book or type(page) is not int or not 1 <= page <= book['page_count']:
                         raise ValueError('Invalid edition or page')
-                    return self.json(assessment.run(edition, page, body.get('version'), body.get('text'),
+                    text = page_text.reference(book, page)['text']
+                    return self.json(assessment.run(edition, page, body.get('version'), text,
                                                     recordings=self.recordings))
                 except (BrokenPipeError, ConnectionResetError):
                     return
@@ -589,7 +710,7 @@ def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None)
                 if not isinstance(body, dict):
                     raise ValueError('Expected a JSON object')
                 supplied_scope = body.get('reader_scope')
-                if cloud and ((supplied_scope is not None and supplied_scope != self.reader_scope)
+                if (cloud or sync) and ((supplied_scope is not None and supplied_scope != self.reader_scope)
                               or (self.account and supplied_scope != self.reader_scope)):
                     return self.json({'error': '账号已切换，请刷新网页。'}, 409)
                 b = editions.get(body.get('edition_id'))
@@ -599,6 +720,14 @@ def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None)
                 completed = body.get('completed', False)
                 if type(completed) is not bool:
                     raise ValueError('Invalid completion flag')
+                completion_days = body.get('completion_days', [])
+                if not isinstance(completion_days, list) or len(completion_days) > 32:
+                    raise ValueError('Invalid completion days')
+                for day in completion_days:
+                    if (not isinstance(day, str) or not re.fullmatch(r'\d{4}-\d{2}-\d{2}', day)
+                            or not date(2000, 1, 1) <= date.fromisoformat(day) <= datetime.now(timezone.utc).date() + timedelta(days=1)
+                            or not completed):
+                        raise ValueError('Invalid completion day')
                 writer, sequence = body.get('writer_id'), body.get('sequence')
                 if 'writer_id' in body or 'sequence' in body:
                     if (not isinstance(writer, str) or not re.fullmatch(r'[A-Za-z0-9_-]{8,80}', writer)
@@ -620,7 +749,13 @@ def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None)
                       ON CONFLICT(edition_id) DO UPDATE SET page=excluded.page,
                         completed=MAX(progress.completed, excluded.completed), updated_at=excluded.updated_at''',
                                (b['edition_id'], page, int(completed)))
+                    db.executemany('INSERT OR IGNORE INTO completions VALUES (?, ?)',
+                                   [(b['edition_id'], day) for day in completion_days])
+                    if sync:
+                        sync.enqueue(db, body, self.sync_state)
                     db.commit()
+                    if sync:
+                        (self.data / 'library.sqlite3').chmod(0o600)
                 finally:
                     db.close()
                 return self.json({'saved': True})
@@ -639,6 +774,8 @@ def serve(data, port, cloud_origin=None, listen='127.0.0.1', manifest_path=None)
     finally:
         server.server_close()
         assessment.close()
+        if sync:
+            sync.close()
 
 
 if __name__ == '__main__':
@@ -648,5 +785,6 @@ if __name__ == '__main__':
     parser.add_argument('--cloud-origin')
     parser.add_argument('--listen', default='127.0.0.1')
     parser.add_argument('--manifest', type=Path)
+    parser.add_argument('--sync-origin', help='Score locally; sync accounts, progress and saved recordings over HTTPS')
     args = parser.parse_args()
-    serve(args.data, args.port, args.cloud_origin, args.listen, args.manifest)
+    serve(args.data, args.port, args.cloud_origin, args.listen, args.manifest, args.sync_origin)

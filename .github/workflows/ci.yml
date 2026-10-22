@@ -12,8 +12,10 @@ jobs:
           python-version: '3.11'
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24.22.1'
           cache: npm
+      - name: Verify test runtime
+        run: node --version
       - name: System dependencies
         run: sudo apt-get update && sudo apt-get install -y poppler-utils qpdf ffmpeg espeak-ng tesseract-ocr tesseract-ocr-eng
       - name: Generate original examples

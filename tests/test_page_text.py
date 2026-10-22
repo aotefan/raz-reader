@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from engine.page_text import PageText, text_items, has_reading_text
+from engine.page_text import PageText, text_items, has_reading_text, fragmented_caption
 
 
 TSV = ('level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext\n'
@@ -68,6 +68,7 @@ class PageTextTests(unittest.TestCase):
         result = subprocess.CompletedProcess([], 0, TSV, '')
         with patch('engine.page_text.subprocess.run', return_value=result) as run:
             first = self.reader.read(self.book, 9)
+            self.assertIn('-hide-annotations', run.call_args_list[0].args[0])
             self.assertEqual(self.reader.read(self.book, 9), first)
             self.assertEqual(run.call_count, 2)
             self.reader.read(self.book, 10)
@@ -116,6 +117,45 @@ class PageTextTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.reader.read(self.book, 9)
             run.assert_not_called()
+
+    def test_fragmented_caption_rebuilds_only_bad_cached_page(self):
+        items = [{'str': word, 'height': height, 'transform': [1, 0, 0, height, x, 118]}
+                 for word, height, x in [('n',21,448),('UO',21,384),('O',21,159),('LL.',29,132)]]
+        self.assertTrue(fragmented_caption(items))
+        self.assertTrue(fragmented_caption(items + [{'str':'aden','height':26.36,'transform':[1,0,0,26.36,298,118]}]))
+        self.assertFalse(fragmented_caption([{'str':'I am', 'height':30,'transform':[1,0,0,30,140,118]}]))
+        self.assertFalse(fragmented_caption([{'str':'Go!', 'height':30,'transform':[1,0,0,30,140,118]}]))
+        stat = self.pdf.stat()
+        key = hashlib.sha256(f'pdf_test:{stat.st_size}:{stat.st_mtime_ns}:8:tesseract-eng-v5-no-annotations'.encode()).hexdigest()
+        self.reader.directory.mkdir(parents=True)
+        (self.reader.directory / (key + '.json')).write_text(json.dumps({'items':items,'method':'full_page'}))
+        header, geometry = TSV.splitlines(keepends=True)[:2]
+        broken = header + geometry + ''.join(f'5\t1\t{n}\t1\t1\t1\t{x}\t1700\t20\t60\t90\t{word}\n'
+            for n,(word,x) in enumerate([('n',448),('UO',384),('O',159),('LL.',132)],1))
+        cropped = TSV.replace('1000\t2000','1000\t400').replace('1600','100').replace('The','Four').replace('people.','trucks.')
+        with patch('engine.page_text.subprocess.run',side_effect=[
+            subprocess.CompletedProcess([],0,''),subprocess.CompletedProcess([],0,broken),
+            subprocess.CompletedProcess([],0,''),subprocess.CompletedProcess([],0,cropped),
+        ]) as run:
+            result = self.reader.read(self.book,8)
+            self.assertEqual(result['items'][0]['str'],'Four trucks.')
+            self.assertEqual(result['method'],'caption_band_fallback')
+            self.assertEqual(self.reader.read(self.book,8),result)
+            self.assertEqual(run.call_count,4)
+            self.assertEqual(self.pdf.read_bytes(),b'fixture')
+
+    def test_unresolved_fragmented_caption_is_not_sent_to_scoring_or_cached(self):
+        header, geometry = TSV.splitlines(keepends=True)[:2]
+        broken = header + geometry + ''.join(f'5\t1\t{n}\t1\t1\t1\t{x}\t1700\t20\t60\t90\t{word}\n'
+            for n,(word,x) in enumerate([('n',448),('UO',384),('O',159),('LL.',132)],1))
+        empty = header + geometry
+        with patch('engine.page_text.subprocess.run',side_effect=[
+            subprocess.CompletedProcess([],0,''),subprocess.CompletedProcess([],0,broken),
+            subprocess.CompletedProcess([],0,''),subprocess.CompletedProcess([],0,empty),subprocess.CompletedProcess([],0,empty),
+        ]):
+            with self.assertRaises(RuntimeError):
+                self.reader.read(self.book,8)
+        self.assertEqual(list(self.reader.directory.glob('*.json')),[])
 
     def test_timeout_is_retryable_and_never_cached(self):
         with patch('engine.page_text.subprocess.run', side_effect=subprocess.TimeoutExpired('ocr', 30)):

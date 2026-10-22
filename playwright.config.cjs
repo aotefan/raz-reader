@@ -1,6 +1,6 @@
 const { defineConfig } = require('@playwright/test');
 module.exports = defineConfig({
-  testDir: './tests', testMatch: 'public-demo.spec.cjs', workers: 1, timeout: 60000,
+  testDir: './tests', testMatch: ['public-demo.spec.cjs', 'reading-updates.spec.cjs'], workers: 1, timeout: 60000,
   reporter: 'list',
   use: { baseURL: 'http://127.0.0.1:8876', headless: true,
     ...(process.env.PW_CHANNEL ? { channel: process.env.PW_CHANNEL } : {}),

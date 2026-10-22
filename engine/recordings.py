@@ -4,22 +4,27 @@ import json
 import math
 import sqlite3
 import subprocess
+import uuid
+from engine.recording_sync import RecordingSyncStore, now
 
 MAX_BYTES = 20 * 1024 * 1024
 MIME_TYPES = {'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/wav', 'audio/x-wav'}
 
 
-class Recordings:
-    def __init__(self, data):
+class Recordings(RecordingSyncStore):
+    def __init__(self, data, sync_context=None):
+        self.sync_context = sync_context
         data.mkdir(parents=True, exist_ok=True)
         self.path = data / 'recordings.sqlite3'
         with self.connection() as db:
+            db.execute('BEGIN IMMEDIATE')
             db.execute('''CREATE TABLE IF NOT EXISTS recordings (
               edition TEXT NOT NULL, page INTEGER NOT NULL, next_version INTEGER NOT NULL DEFAULT 0,
               version INTEGER NOT NULL DEFAULT 0, mime TEXT, audio BLOB, updated_at TEXT,
               PRIMARY KEY (edition, page))''')
             if 'assessment' not in {row[1] for row in db.execute('PRAGMA table_info(recordings)')}:
                 db.execute('ALTER TABLE recordings ADD COLUMN assessment TEXT')
+            self.sync_schema(db)
 
     @contextmanager
     def connection(self):
@@ -35,17 +40,19 @@ class Recordings:
     def reserve(self, edition, page):
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
-            db.execute('''INSERT INTO recordings (edition,page,next_version) VALUES (?,?,1)
-              ON CONFLICT(edition,page) DO UPDATE SET next_version=next_version+1''', (edition, page))
+            db.execute('''INSERT INTO recordings (edition,page,next_version,reserved_at) VALUES (?,?,1,?)
+              ON CONFLICT(edition,page) DO UPDATE SET next_version=next_version+1,
+              reserved_at=excluded.reserved_at''', (edition, page, now()))
             return db.execute('SELECT next_version FROM recordings WHERE edition=? AND page=?',
                               (edition, page)).fetchone()[0]
 
     def list(self, edition):
         with self.connection() as db:
-            return {str(page): {'version': version, 'updated_at': updated,
+            return {str(page): {'version': version, 'updated_at': updated, 'take_id': take,
+                               'assessment_at': assessed,
                                'assessment': json.loads(assessment) if assessment else None}
-                    for page, version, updated, assessment in db.execute(
-                        'SELECT page,version,updated_at,assessment FROM recordings WHERE edition=? AND audio IS NOT NULL',
+                    for page, version, updated, assessment, take, assessed in db.execute(
+                        'SELECT page,version,updated_at,assessment,take_id,assessment_at FROM recordings WHERE edition=? AND audio IS NOT NULL',
                         (edition,))}
 
     def summaries(self, page_counts):
@@ -70,7 +77,10 @@ class Recordings:
         return {edition: {'average': round(sum(values) / len(values), 1),
                           'scored_pages': len(values)} for edition, values in scores.items()}
 
-    def save(self, edition, page, version, mime, audio):
+    @staticmethod
+    def validate_audio(mime, audio):
+        if not isinstance(mime, str):
+            raise ValueError('Unsupported recording')
         mime = mime.split(';')[0].strip().lower()
         if mime not in MIME_TYPES or not 0 < len(audio) <= MAX_BYTES:
             raise ValueError('Unsupported or oversized recording')
@@ -83,6 +93,10 @@ class Recordings:
                 raise ValueError('Recording must contain readable audio only')
         except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as error:
             raise ValueError('Could not verify recording audio') from error
+
+    def save(self, edition, page, version, mime, audio):
+        self.validate_audio(mime, audio)
+        mime = mime.split(';')[0].strip().lower()
         with self.connection() as db:
             db.execute('BEGIN IMMEDIATE')
             row = db.execute('SELECT next_version,version FROM recordings WHERE edition=? AND page=?',
@@ -92,8 +106,9 @@ class Recordings:
             if version <= row[1]:
                 return False
             db.execute('''UPDATE recordings SET version=?,mime=?,audio=?,assessment=NULL,
-              updated_at=strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE edition=? AND page=?''',
-                       (version, mime, audio, edition, page))
+              updated_at=?,take_id=?,assessment_at=NULL WHERE edition=? AND page=?''',
+                       (version, mime, audio, now(), uuid.uuid4().hex, edition, page))
+            self.queue_recording(db, edition, page)
             return True
 
     def playback(self, edition, page):
@@ -134,5 +149,8 @@ class Recordings:
 
     def save_assessment(self, edition, page, version, result):
         with self.connection() as db:
-            return db.execute('UPDATE recordings SET assessment=? WHERE edition=? AND page=? AND version=? AND audio IS NOT NULL',
-                              (json.dumps(result, ensure_ascii=False), edition, page, version)).rowcount == 1
+            saved = db.execute('UPDATE recordings SET assessment=?,assessment_at=? WHERE edition=? AND page=? AND version=? AND audio IS NOT NULL',
+                              (json.dumps(result, ensure_ascii=False), now(), edition, page, version)).rowcount == 1
+            if saved:
+                self.queue_recording(db, edition, page)
+            return saved

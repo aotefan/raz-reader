@@ -46,8 +46,32 @@ def text_items(tsv, page_size=None, offset=(0, 0)):
 
 def has_reading_text(items):
     """A detected footer alone does not mean the picture-book caption was read."""
-    footer = re.compile(r'\blevel\s+(?:aa|[a-z][12]?)\b|www\.|reading[a-]?z\.com|all rights reserved|copyright|©', re.I)
+    footer = re.compile(r'\blevel\s+(?:aa|[a-z][12]?)\b|www\.|reading[a-]?z\.com|all rights reserved|copyright|©|^(?:written|illustrated|photographs|illustrations)\s+by\b', re.I)
     return any(re.search(r'[A-Za-z]{2,}', i['str']) and not footer.search(i['str']) for i in items)
+
+
+def fragmented_caption(items):
+    """Detect a horizontal caption wrongly segmented into separate tiny columns.
+
+    Tesseract can read individual sideways glyph groups instead of one line.
+    A real line such as 'I am' or 'Go!' must not be mistaken for this failure.
+    """
+    candidates = []
+    for item in items:
+        transform = item.get('transform')
+        height = item.get('height', 0)
+        if not transform or not 14 <= height <= 75:
+            continue
+        bottom = 1000 - transform[5]
+        words = re.findall(r'[A-Za-z]+', item.get('str', ''))
+        if .78 * 1000 <= bottom <= .92 * 1000 and words:
+            if len(words) > 1:
+                return False
+            candidates.append((transform[4], bottom, height))
+    return (len(candidates) >= 3
+            and max(c[0] for c in candidates) - min(c[0] for c in candidates) > 100
+            and max(c[1] for c in candidates) - min(c[1] for c in candidates)
+                < max(c[2] for c in candidates) * .7)
 
 
 class PageText:
@@ -60,26 +84,28 @@ class PageText:
             raise ValueError('Invalid page')
         source = contained(book['source_path'], book['source_root'])
         stat = source.stat()
-        key = hashlib.sha256(f"{book['edition_id']}:{stat.st_size}:{stat.st_mtime_ns}:{page}:tesseract-eng-v4-caption-sparse".encode()).hexdigest()
+        key = hashlib.sha256(f"{book['edition_id']}:{stat.st_size}:{stat.st_mtime_ns}:{page}:tesseract-eng-v5-no-annotations".encode()).hexdigest()
         self.directory.mkdir(parents=True, exist_ok=True)
         cache = self.directory / (key + '.json')
         with self.lock:
             if cache.is_file():
                 try:
-                    return json.loads(cache.read_text())
+                    saved = json.loads(cache.read_text())
+                    if not fragmented_caption(saved.get('items', [])):
+                        return saved
                 except (ValueError, OSError):
                     pass  # Rebuild an interrupted/corrupt cache on demand.
             try:
                 with tempfile.TemporaryDirectory(dir=self.directory) as temporary:
                     prefix = Path(temporary) / 'page'
                     subprocess.run(['pdftoppm', '-f', str(page), '-l', str(page), '-singlefile',
-                                    '-scale-to', '2200', '-png', str(source), str(prefix)],
+                                    '-scale-to', '2200', '-hide-annotations', '-png', str(source), str(prefix)],
                                    check=True, capture_output=True, timeout=30)
                     result = subprocess.run(['tesseract', str(prefix) + '.png', 'stdout', '-l', 'eng', 'tsv'],
                                             check=True, capture_output=True, text=True, timeout=30)
                     items = text_items(result.stdout)
                     method = 'full_page'
-                    if not has_reading_text(items):
+                    if not has_reading_text(items) or fragmented_caption(items):
                         # Large illustrations / media buttons can make automatic
                         # segmentation skip a short caption. Retry the lower band
                         # of this page only, suppressing annotation appearances.
@@ -100,9 +126,11 @@ class PageText:
                                                     '--psm', segmentation, 'tsv'],
                                                    check=True, capture_output=True, text=True, timeout=30)
                             captions = text_items(retry.stdout, (width, height), (0, top))
-                            if has_reading_text(captions):
+                            if has_reading_text(captions) and not fragmented_caption(captions):
                                 items = captions; method = 'caption_band_fallback'
                                 break
+                        if fragmented_caption(items):
+                            raise ValueError('Caption OCR remains fragmented')
                 output = {'items': items, 'view': [0, 0, 1000, 1000], 'source': 'Tesseract eng', 'method': method,
                           'page': page, 'offline': True, 'reviewed': False}
                 temporary_cache = cache.with_suffix('.tmp')

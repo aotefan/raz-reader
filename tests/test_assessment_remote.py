@@ -106,7 +106,7 @@ class BrokerTests(unittest.TestCase):
                     {'id': 'a'*48, 'audio': '!!!!', 'text': TEXT},
                     {'id': 'a'*48, 'audio': base64.b64encode(b'a').decode(), 'text': '<script>x</script>'}):
             with self.assertRaises(ValueError): decode_job(job)
-        for origin in ('http://reader.example.com', 'https://a@reader.example.com', 'https://reader.example.com/path'):
+        for origin in ('http://raz.aotefan.com', 'https://a@raz.aotefan.com', 'https://raz.aotefan.com/path'):
             with self.assertRaises(ValueError): WorkerConnection(origin, TOKEN)
 
     def test_failed_delivery_and_shutdown_wake_up_waiting_assessment(self):

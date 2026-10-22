@@ -1,6 +1,5 @@
-import { readPageText, pageBodyText } from '/page-translation.js';
 import { scopeHeaders } from '/identity.js';
-import { recognizePage } from '/ocr-text.js';
+import { readingText } from '/ocr-text.js';
 import { showPhones, wordNeedsPractice } from '/assessment-phones.js';
 import { assessmentReward } from '/assessment-reward.js';
 import { assessmentPassScore } from '/reward-model.js';
@@ -8,16 +7,12 @@ import { assessmentPassScore } from '/reward-model.js';
 // Capture the document/page at recording start, before navigation can change them.
 export async function assessmentReference(book, document, number) {
   try {
-    if (!document) throw new Error('本页暂时没有可识别的英文文字。');
-    const pdfPage = await document.getPage(number);
-    let text = pageBodyText(await readPageText(pdfPage), pdfPage.view);
-    if (!/[A-Za-z]/.test(text)) {
-      const recognized = await recognizePage(book, number);
-      text = pageBodyText(recognized, recognized.view);
-    }
-    if (!/[A-Za-z]/.test(text)) throw new Error('本页暂时没有可识别的英文文字。');
-    return { text };
-  } catch (error) { return { error: error.message || '本页文字读取失败，请重试。' }; }
+    const recognized = await readingText(book, number);
+    return { text: recognized.reading.text };
+  } catch (error) {
+    const message = error.message || '本页文字读取失败，请重试。';
+    return { error: message.includes('评分') ? message : message + '录音会保留，暂不评分。' };
+  }
 }
 
 export function recordingAssessment(context, refresh) {
@@ -32,6 +27,12 @@ export function recordingAssessment(context, refresh) {
   recording.addEventListener('pause', replayLabel);
   recording.addEventListener('ended', replayLabel);
   $('assessment-replay').onclick = () => { stopWord(); $('recording-play').click(); };
+  // Reuse the page's original-audio player, including its pause/rate handling.
+  const narrate = $('assessment-narrate'), pagePlay = $('play');
+  const narrationLabel = () => { narrate.textContent = pagePlay.textContent; narrate.disabled = pagePlay.disabled; };
+  new MutationObserver(narrationLabel).observe(pagePlay, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled'] });
+  narrate.onclick = () => { stopWord(); recording.pause(); pagePlay.click(); narrationLabel(); };
+  narrationLabel();
   $('assessment-demo').onclick = () => { if (selectedWord) hearWord(selectedWord, selectedItem); };
   function stopWord() {
     ++speechId; audio.pause(); audio.removeAttribute('src'); audio.load();
@@ -51,6 +52,10 @@ export function recordingAssessment(context, refresh) {
   });
   $('close-assessment').onclick = () => close(true);
   $('assessment-practice').onclick = () => { close(); $('record').click(); };
+  $('assessment-next').onclick = () => {
+    if ($('next').disabled) return;
+    close(); $('next').click();
+  };
   function selectWord(word, item) {
     stopWord();
     selectedWord = word; selectedItem = item;
@@ -107,6 +112,7 @@ export function recordingAssessment(context, refresh) {
   }
   function openDetails(result) {
     details(result);
+    $('assessment-next').disabled = $('next').disabled;
     if (!panel.open) panel.showModal();
     $('assessment-body').scrollTop = 0;
     button.setAttribute('aria-expanded', 'true');
@@ -135,7 +141,12 @@ export function recordingAssessment(context, refresh) {
       if (current.book !== book || current.number !== number || current.clip !== clip) {
         clip.referenceChecked = false; return;
       }
-      if (!reference.error && reference.text !== clip.assessment?.reference) {
+      if (reference.error) {
+        // A historic low score is not valid evidence when its answer key cannot
+        // be confirmed. Keep the take playable and permit a later retry.
+        clip.assessment = null;
+        clip.assessmentError = reference.error;
+      } else if (reference.text !== clip.assessment?.reference) {
         // Reuse the saved take/version. Never upload again or adjust the old score.
         clip.assessment = null;
         await evaluate(book, number, clip, Promise.resolve(reference), null, false);

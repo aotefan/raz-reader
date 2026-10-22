@@ -8,6 +8,28 @@ import threading
 import unicodedata
 from pathlib import Path
 from engine.pipeline import APP
+from engine.dictionary import lookup
+
+
+def noun_caption(value, dictionary):
+    """Translate a bare labelled object from the existing dictionary.
+
+    A single noun supplies too little context for the sentence model (e.g.
+    'The rake.' becomes '车轮'). Only apply to an article plus one noun with
+    an explicit noun entry; verbs, modifiers and sentences stay with the model.
+    """
+    match = re.fullmatch(r'(?:the|an?)\s+([a-z]+)[.!]?', value, re.I)
+    if not match:
+        return None
+    entry = lookup(dictionary, match[1])
+    for meaning in entry.get('meanings', []):
+        noun = re.fullmatch(r'n\.\s+(.+)', meaning.strip())
+        if noun:
+            first = re.split(r'[,，;；]', noun[1])[0].strip()
+            if re.fullmatch(r'[\u3400-\u9fff]{1,20}', first):
+                return {'translation': first + '。', 'source': 'ECDICT noun caption',
+                        'offline': True, 'machine_translation': True}
+    return None
 
 
 def english_text(value):
@@ -24,6 +46,23 @@ def english_text(value):
     return value
 
 
+def trim_translation_loop(source, translated):
+    """Remove a clear decoder loop on a single short, non-repeated caption.
+
+    Leave normal prose and deliberate source repetitions untouched. The old
+    offline model can emit '我的毛衣' many times for the two-word caption.
+    Keep only an actually generated clause; do not invent a replacement.
+    """
+    words = re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)?", source.lower())
+    clauses = [s.strip() for s in re.split(r'[,，。.!！?？;；]', translated) if s.strip()]
+    if (1 <= len(words) <= 4 and len(set(words)) == len(words)
+            and len(re.findall(r'[.!?]', source)) <= 1 and len(clauses) >= 3
+            and re.fullmatch(r'[\u3400-\u9fff]{2,16}', clauses[0])
+            and clauses.count(clauses[0]) >= max(3, len(clauses) / 2)):
+        return clauses[0] + '。'
+    return translated
+
+
 class LanguageTools:
     def __init__(self, data):
         self.data = Path(data)
@@ -32,6 +71,9 @@ class LanguageTools:
 
     def translate(self, value):
         value = english_text(value)
+        caption = noun_caption(value, APP / 'data/dictionary/ecdict.sqlite3')
+        if caption:
+            return caption
         python = APP / '.venv-translation/bin/python'
         model = APP / 'data/translation/translate-en_zh-1_9/model/model.bin'
         if not python.exists() or not model.is_file():
@@ -49,6 +91,7 @@ class LanguageTools:
                 raise ValueError(result['error'])
             if not result.get('translation'):
                 raise RuntimeError('没有生成译文，请缩短句子后重试。')
+            result['translation'] = trim_translation_loop(value, result['translation'])
             return {**result, 'source': 'Argos en→zh 1.9 / OPUS-MT', 'offline': True,
                     'machine_translation': True}
         except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError) as error:

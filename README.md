@@ -35,10 +35,11 @@ These are captures of the running application, not design mockups. The current a
 ## What it does
 
 - **Read your own books.** PDF.js renders the original PDF, including text layers and supported embedded audio. Pinch to zoom; resume where you left off.
-- **Keep a simple bookshelf.** Search, filter by grade or reading status, remember the selected level, and put unfinished books before completed books.
+- **Keep a simple bookshelf.** Search, filter by grade or reading status, remember the selected level, and put unfinished books before completed books. Today’s completed-book count uses **Beijing time (Asia/Shanghai)** on every device; each book counts once per day.
 - **Keep readers separate.** In HTTPS/cloud mode, use usernames, passwords and nicknames, switch between up to eight remembered accounts, and synchronize each account's progress across devices.
-- **Understand a page.** English-to-Chinese translation, ECDICT word lookup, single-word pronunciation, and OCR for image-only pages use self-hosted tools.
+- **Understand a page.** Translation and scoring share a page-bound reading reference. OCR checks the body text across multiple passes and searches caption strips when full-page layout detection fails. Uncertain text keeps the recording available without issuing a misleading score. Short article-and-noun captions use ECDICT noun meanings when available.
 - **Practice pronunciation.** Save the latest recording per page and compare recognized phonemes with the target text. View word-level feedback and expected/heard sounds.
+- **Read locally and sync privately.** Optionally connect the localhost reader to your own HTTPS deployment: score on the local machine, then synchronize progress, saved recordings and results in the background. The default installation does not connect to any cloud.
 - **Use a Mac when available.** An optional Mac worker pulls scoring jobs over HTTPS. An unavailable, busy or timed-out worker falls back to the server's scorer.
 
 Narration requires audio already embedded in a book or a verified audio mapping. Having an audiobook does not automatically provide accurate page or sentence timing. Commercial encouragement voice files from the private deployment are omitted; visual rewards still work.
@@ -75,7 +76,7 @@ cd raz-reader
 
 Open **http://127.0.0.1:8765**. Stop with `Ctrl+C`. To select another port: `RAZ_PORT=8875 ./scripts/start.sh`.
 
-The default service is local-only and uses one local reading profile. Multi-account login and cross-device synchronization require HTTPS/cloud mode; see [deployment](docs/DEPLOYMENT.md). Microphone access requires localhost or a secure HTTPS context and a supported browser.
+The default service is local-only and uses one local reading profile. Multi-account login and cross-device synchronization require your own HTTPS/cloud deployment, either opened directly or linked through the optional localhost bridge; see [deployment](docs/DEPLOYMENT.md). Microphone access requires localhost or a secure HTTPS context and a supported browser.
 
 ### Optional language and scoring tools
 
@@ -88,6 +89,8 @@ The default service is local-only and uses one local reading profile. Multi-acco
 ```
 
 Install these only when you need them, then restart the reader. Model installers pin upstream versions/revisions and store downloads in ignored `data/` directories. Initial installation needs the internet; normal model inference runs locally. Reading works without these optional models; unavailable tools report that they are not installed.
+
+On a computer, **Space** starts/stops recording or starts a new take. **← / →** change pages even while the feedback dialog is open. The dialog also provides page narration and a compact next-page button. Embedded PDF media widgets are hidden to keep text clear; narration remains in the bottom toolbar. Shortcuts do not intercept typing in input fields.
 
 The scorer uses a CPU phoneme model, not a paid speech API. Long recordings and concurrent requests can be slow on small servers. The UI limits takes to 10–55 seconds according to page length; the engine accepts at most 60 seconds and 120 reference words.
 
@@ -153,7 +156,7 @@ npm run test:e2e
 python3 scripts/audit_public.py
 ```
 
-On macOS with Google Chrome already installed, use `PW_CHANNEL=chrome npm run test:e2e` instead of downloading a browser. The browser suite exercises original books: bookshelf, search, PDF rendering, page persistence and the mobile picker. The backend suite covers account isolation, audio handling, version guards and scoring failover; many model-bound unit tests use controlled substitutes and do not establish real-world model accuracy.
+On macOS with Google Chrome already installed, use `PW_CHANNEL=chrome npm run test:e2e` instead of downloading a browser. The browser suite exercises original books: bookshelf, search, PDF rendering, page persistence, the mobile picker, feedback navigation, recording shortcuts and Beijing-day rollover in three device time zones. The backend suite covers account isolation, audio handling, version guards and scoring failover; many model-bound unit tests use controlled substitutes and do not establish real-world model accuracy.
 
 | Directory | Purpose |
 | --- | --- |
@@ -168,7 +171,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) before submitting screenshots, fixtures, 
 
 ## Scope and license
 
-This first public release is a self-hosted web app. An Android package, complete offline-book download manager, on-phone model inference, parent/child account hierarchy, and multi-server high availability are not included. The private deployment's Android shell, operational scripts and production settings were intentionally left out of the public source package.
+This project is a self-hosted web app. See [recent changes](CHANGELOG.md). An Android package, complete offline-book download manager, on-phone model inference, parent/child account hierarchy, and multi-server high availability are not included. The private deployment's Android shell, operational scripts and production settings were intentionally left out of the public source package.
 
 Original application code and original example text/art are under [Apache-2.0](LICENSE). Third-party components retain their own licenses; the repository is **not a claim that every dependency is Apache-2.0**. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) and [UPSTREAM.json](UPSTREAM.json). Optional model weights, dictionaries and external tools have their own terms and are not bundled here.
 

@@ -1,6 +1,6 @@
-// Keep legacy storage keys so the project rename preserves existing reading preferences and pending writes.
 import * as pdfjs from '/vendor/pdfjs/build/pdf.mjs';
-import { captureProgress, pendingProgress, syncProgress, flushProgress, isLatestProgress, configureProgress } from '/progress.js';
+const SHELF_TITLE = document.title;
+import { captureProgress, pendingProgress, syncProgress, flushProgress, isLatestProgress, configureProgress, localDay } from '/progress.js';
 import { readingState, mostRecentFirst, shelfOrder } from '/reading.js';
 import { setIdentity, scopeHeaders } from '/identity.js';
 import { personalCenter } from '/personal-center.js';
@@ -27,6 +27,7 @@ let coverQueue = Promise.resolve(), audioMode = 'pages', activeMediaKey = '', li
 let readingFilter = 'all', nativeAudio, unbindWordLookup, coverObserver;
 let readerTimer, readerAttempts = 0;
 let selectedScope, preferenceQueue = Promise.resolve();
+let renderedReadingDay;
 const narration = $('narration');
 const readingSpeed = playbackSpeed($('reading-speed'), narration, rate => { nativeAudio?.setRate(rate); $('sentence-audio').playbackRate = rate; });
 const recordingTransport = recordingPlayer({
@@ -60,7 +61,7 @@ function message(text) { $('message').textContent = text; $('message').hidden = 
 async function loadLibrary() {
   const generation = ++libraryGeneration;
   const response = await fetch('/api/library');
-  if (!response.ok) throw new Error('书库加载失败');
+  if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error || '书库加载失败');
   const result = await response.json();
   if (generation !== libraryGeneration || current) return;
   if (library && result.reader_scope !== library.reader_scope) { location.reload(); return; }
@@ -76,6 +77,7 @@ async function loadLibrary() {
   const pending = pendingProgress(result.books);
   for (const snapshot of pending) {
     for (const book of result.books.filter(b => b.edition_id === snapshot.body.edition_id)) {
+      book.completion_days = [...new Set([...(book.completion_days || []), ...(snapshot.body.completion_days || [])])];
       book.progress = { ...book.progress, page: snapshot.body.page, read_at: snapshot.body.read_at,
         completed: book.progress.completed || snapshot.body.completed, visited: true, pending_sync: !browserOnly };
     }
@@ -223,7 +225,10 @@ function renderReadingRecords() {
   for (const state of ['new', 'reading', 'completed']) {
     $('stat-' + state).textContent = String(originals.filter(b => readingState(b) === state).length);
   }
-  $('shelf-read-count').textContent = `已读完 ${$('stat-completed').textContent} 本`;
+  renderedReadingDay = localDay();
+  const today = originals.filter(b => b.completion_days?.includes(renderedReadingDay)).length;
+  $('shelf-read-count').textContent = `今日读完 ${today} 本 · 累计 ${$('stat-completed').textContent} 本`;
+  $('shelf-read-count').title = '按北京时间统计，每天零点更新';
   $('shelf-read-count').hidden = false;
   const recent = library.books.filter(b => readingState(b) === 'reading' && b.validation !== 'failed')
     .sort(mostRecentFirst)[0];
@@ -350,6 +355,8 @@ document.addEventListener('webviewerloaded', event => {
   if (win !== $('pdf-frame').contentWindow || !current
       || win.location.href !== $('pdf-frame').src
       || new URL(win.location.href).searchParams.get('file') !== current.pdf_url) return;
+  win.addEventListener('keydown', readerShortcut, true);
+  win.addEventListener('keyup', preventSpaceClick, true);
   const options = win.PDFViewerApplicationOptions;
   options.setAll({ enablePermissions: false, enableScripting: false, enableXfa: false,
     annotationEditorMode: -1, annotationMode: 1, viewOnLoad: 1,
@@ -474,9 +481,10 @@ function navigate(delta) {
     if (advancing && audioMode === 'pages' && audioAsset()) playAudio();
   }
 }
-function saveProgress() {
+function saveProgress(complete = false) {
   if (!current || !ready) return saveQueue;
-  const book = current, snapshot = captureProgress(book, page), body = snapshot.body;
+  const book = current, snapshot = captureProgress(book, page, complete === true), body = snapshot.body;
+  book.completion_days = [...new Set([...(book.completion_days || []), ...body.completion_days])];
   const sequence = ++saveSequence, generation = renderGeneration;
   book.progress = { ...body, visited: true };
   // Queue writes to prevent a slow earlier request overwriting a later page.
@@ -485,7 +493,8 @@ function saveProgress() {
   saveQueue = saveQueue.catch(() => {}).then(async () => {
     const synced = await syncProgress(snapshot);
     if (synced && sequence === saveSequence && generation === renderGeneration) {
-      $('saved').textContent = body.completed ? '✓ 已读完 · 已保存' : '✓ 进度已保存';
+      $('saved').textContent = library?.mode === 'local_sync' && library.account
+        ? '✓ 本机已保存 · 后台同步进度' : body.completed ? '✓ 已读完 · 已保存' : '✓ 进度已保存';
     }
   }).catch(() => {
     if (sequence === saveSequence && generation === renderGeneration && isLatestProgress(snapshot)) {
@@ -587,9 +596,9 @@ function renderPointReading() {
 $('play').onclick = () => { synchronizePage(); audioPaused() ? playAudio() : audioAsset()?.native ? nativeAudio?.pause() : narration.pause(); };
 $('prev').onclick = () => { pendingAudioAdvance = false; navigate(-1); };
 $('next').onclick = () => { pendingAudioAdvance = false; navigate(1); };
-$('complete').onclick = () => { if (current && ready) { current.progress.completed = true; saveProgress(); } };
+$('complete').onclick = () => { if (current && ready) { current.progress.completed = true; saveProgress(true); } };
 $('back').onclick = async () => {
-  cancelReaderLoad(); document.title = 'RAZ Reader';
+  cancelReaderLoad(); document.title = SHELF_TITLE;
   unbindWordLookup?.(); unbindWordLookup = null; wordLookup.close();
   translation.reset();
   const saved = saveProgress();
@@ -602,12 +611,36 @@ $('back').onclick = async () => {
 $('search').addEventListener('input', renderShelf);
 $('audio-only').addEventListener('change', renderShelf);
 $('retry-progress').onclick = saveProgress;
-window.addEventListener('keydown', e => {
-  if (document.querySelector('dialog[open]')) return;
-  if (!current || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName)) return;
-  if (e.key === 'ArrowLeft') { e.preventDefault(); navigate(-1); }
-  if (e.key === 'ArrowRight') { e.preventDefault(); navigate(1); }
-});
+function readerShortcut(e) {
+  if (!current || !ready || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey
+      || /INPUT|TEXTAREA|SELECT/.test(e.target.tagName) || e.target.isContentEditable) return;
+  const dialog = document.querySelector('dialog[open]');
+  if (dialog && dialog.id !== 'assessment-details') return;
+  if (e.code === 'Space' || e.key === ' ') {
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (e.repeat) return;
+    if (dialog) dialog.close();
+    if (recorder?.state === 'recording') $('stop-record').click();
+    else if (!recordPending && !$('record').disabled) $('record').click();
+    return;
+  }
+  if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (e.repeat) return;
+    const direction = e.key === 'ArrowRight' ? 1 : -1;
+    if (page + direction < 1 || page + direction > current.page_count) return;
+    if (dialog) dialog.close();
+    pendingAudioAdvance = false; navigate(direction);
+  }
+}
+function preventSpaceClick(e) {
+  if ((e.code === 'Space' || e.key === ' ') && current && ready && !/INPUT|TEXTAREA|SELECT/.test(e.target.tagName)
+      && !e.target.isContentEditable && !document.querySelector('dialog[open]:not(#assessment-details)')) {
+    e.preventDefault(); e.stopImmediatePropagation();
+  }
+}
+window.addEventListener('keydown', readerShortcut, true);
+window.addEventListener('keyup', preventSpaceClick, true);
 function flushCurrentProgress() {
   if (current && ready) flushProgress(captureProgress(current, page));
 }
@@ -616,7 +649,7 @@ window.addEventListener('pagehide', () => {
   flushCurrentProgress();
 });
 window.addEventListener('pageshow', event => {
-  if (event.persisted && library && !current) renderShelf();
+  if (event.persisted && library && !current) { renderReadingRecords(); renderShelf(); }
 });
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
@@ -627,6 +660,7 @@ document.addEventListener('visibilitychange', () => {
     }
   }
   else if (current && ready) saveProgress();
+  else if (library) loadLibrary().catch(() => {});
 });
 function stopRecording() {
   recorder?.countdown?.stop();
@@ -819,3 +853,8 @@ $('audio-seek').oninput = () => {
   if (Number.isFinite(media?.duration)) media.currentTime = Number($('audio-seek').value);
 };
 setInterval(() => { if (current && ready) updateTimeline(); }, 250);
+// Refresh the day even if the shelf stays open overnight. Visibility changes
+// already reload records after sleep/background timer throttling.
+setInterval(() => {
+  if (library && localDay() !== renderedReadingDay) renderReadingRecords();
+}, 1000);

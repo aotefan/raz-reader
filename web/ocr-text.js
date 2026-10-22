@@ -17,3 +17,14 @@ export function recognizePage(book, page) {
   }
   return pages.get(key);
 }
+
+// Translation and assessment share the server's page-bound reading reference.
+// Raw OCR letters and a PDF text layer cannot bypass the quality check.
+export async function readingText(book, page) {
+  const result = await recognizePage(book, page);
+  if (result.reading?.status !== 'ready' || !result.reading.text?.trim()) {
+    pages.delete(`${book.edition_id}:${page}`);
+    throw new Error(result.reading?.error || '本页正文暂未识别准确，请稍后重试。');
+  }
+  return result;
+}

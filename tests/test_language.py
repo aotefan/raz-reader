@@ -1,10 +1,11 @@
 import io
+import sqlite3
 import tempfile
 import unittest
 import wave
 from pathlib import Path
 from unittest.mock import patch
-from engine.language import LanguageTools, english_text, APP
+from engine.language import LanguageTools, english_text, APP, noun_caption, trim_translation_loop
 
 
 class LanguageTests(unittest.TestCase):
@@ -23,6 +24,34 @@ class LanguageTests(unittest.TestCase):
         self.assertNotIn('▁', result['translation'])
         self.assertTrue(result['offline'])
         self.assertTrue(result['machine_translation'])
+
+    def test_short_noun_labels_use_dictionary_without_sentence_inference(self):
+        dictionary=self.root/'dictionary.sqlite3'
+        with sqlite3.connect(dictionary) as db:
+            db.execute('CREATE TABLE entries(word,phonetic,translation,exchange)')
+            db.executemany('INSERT INTO entries VALUES(?,?,?,?)',[
+                ('rake','',r'n. 耙子, 浪子\nv. 耙',''),
+                ('broom','',r'n. 扫帚\nv. 扫除',''),
+                ('wheel','',r'n. 轮子, 车轮','')])
+        for source,target in [('The rake.','耙子。'),('A broom.','扫帚。'),('The wheel.','轮子。')]:
+            result=noun_caption(source,dictionary)
+            self.assertEqual(result['translation'],target)
+            self.assertEqual(result['source'],'ECDICT noun caption')
+        for source in ['I rake the leaves.','The red rake.','The rake is red.','The rake. The wheel.','The qqqqq.']:
+            self.assertIsNone(noun_caption(source,dictionary))
+        self.assertIsNone(noun_caption('The rake.',self.root/'missing.sqlite3'))
+        # The dictionary path returns before any model subprocess or model checks.
+        from engine.dictionary import lookup
+        with patch('engine.language.lookup',side_effect=lambda _,word:lookup(dictionary,word)), patch('engine.language.subprocess.run') as run:
+            self.assertEqual(self.language.translate('The rake.')['translation'],'耙子。')
+            run.assert_not_called()
+
+    def test_short_caption_loop_does_not_remove_deliberate_repetition(self):
+        repeated='我的毛衣,我的毛衣,我的毛衣,我的毛衫,我的毛衣'
+        self.assertEqual(trim_translation_loop('My sweater.',repeated),'我的毛衣。')
+        self.assertEqual(trim_translation_loop('My sweater. My sweater.',repeated),repeated)
+        self.assertEqual(trim_translation_loop('Red, red, red.','红色,红色,红色'),'红色,红色,红色')
+        self.assertEqual(trim_translation_loop('Three items.','苹果,梨,香蕉'),'苹果,梨,香蕉')
 
     def test_real_word_voice_is_decodable_and_temporary_files_are_removed(self):
         audio = self.language.pronounce('CITY')

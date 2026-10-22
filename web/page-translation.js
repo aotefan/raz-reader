@@ -1,5 +1,5 @@
 // Translate current-page text locally, with on-demand OCR for image-only pages.
-import { recognizePage } from '/ocr-text.js';
+import { readingText } from '/ocr-text.js';
 export async function readPageText(pdfPage, signal) {
   // PDF.js getTextContent uses ReadableStream async iteration, which some
   // WebKit versions lack. Consume its public stream with the portable reader API.
@@ -23,29 +23,14 @@ export async function readPageText(pdfPage, signal) {
 }
 
 function bodyItems(content, pageView) {
-  let items = content.items.filter(item => typeof item.str === 'string' && item.str.trim());
+  if (content.reading) return content.reading.status === 'ready' ? content.items : [];
+  let items = content.items.filter(item => typeof item.str === 'string' && item.str.trim()
+    && !/^(?:written|illustrated|photographs|illustrations)\s+by\b|\b(?:leveled book|level\s+(?:aa|[a-z][12]?))\b|www\.|reading\s*a[ -]?z\s*\.\s*com|all rights reserved|copyright|©/i.test(item.str));
   const fontSize = item => Math.abs(item.height || Math.hypot(item.transform?.[2] || 0, item.transform?.[3] || 0));
   const height = pageView?.[3] - pageView?.[1];
-  if (content.source === 'Tesseract eng' && height > 0) {
-    const bottom = item => item.transform ? (pageView[3] - item.transform[5]) / height : NaN;
-    // Oversized single letters inside an illustration are not the caption.
-    // Exclude them before estimating footer typography: otherwise "mM" in
-    // Counting Letters makes the smaller, valid "Two letters." look like a footer.
-    const captions = items.filter(item => bottom(item) >= .8 && bottom(item) <= .92
-      && fontSize(item) / height >= .014 && fontSize(item) / height <= .075
-      && /[A-Za-z]/.test(item.str) && /[.!?][”"']?\s*$/.test(item.str));
-    if (captions.length) {
-      const captionSize = Math.max(...captions.map(fontSize));
-      const captionTop = Math.min(...captions.map(item => bottom(item) - fontSize(item) / height));
-      items = items.filter(item => {
-        const letters = item.str.match(/[A-Za-z]+/g);
-        const illustrationLetters = letters?.length && letters.every(word => word.length <= 2)
-          && bottom(item) > .12 && bottom(item) < captionTop
-          && fontSize(item) > captionSize * 1.8;
-        return !illustrationLetters;
-      });
-    }
-  }
+  // Raw OCR is an observation, never an answer key. Only the server's
+  // confirmed reading record may feed translation or assessment.
+  if (content.source === 'Tesseract eng') return [];
   const largest = Math.max(0, ...items.map(fontSize));
   return items.filter(item => {
     if (!(height > 0) || !item.transform || !fontSize(item)) return true;
@@ -61,6 +46,7 @@ function bodyItems(content, pageView) {
 }
 
 export function pageBodyText(content, pageView) {
+  if (content.reading) return content.reading.status === 'ready' ? content.reading.text : '';
   return bodyItems(content, pageView).map(item => item.str).join(' ').trim();
 }
 
@@ -193,19 +179,10 @@ export function pageTranslation(context, beforeOpen) {
     }
     abort = new AbortController(); const signal = abort.signal;
     try {
-      const pdfPage = await viewer.pdfDocument.getPage(page);
+      const content = await readingText(book, page);
       if (id !== version) return;
-      const content = await readPageText(pdfPage, signal);
-      if (id !== version) return;
-      let text = pageBodyText(content, pdfPage.view);
-      anchor = captionAnchor(content, pdfPage.view);
-      if (!/[A-Za-z]/.test(text)) {
-        setStatus('正在识别本页文字…', 'loading');
-        const recognized = await recognizePage(book, page);
-        if (id !== version) return;
-        text = pageBodyText(recognized, recognized.view);
-        anchor = captionAnchor(recognized, recognized.view, true);
-      }
+      const text = content.reading.text;
+      anchor = captionAnchor(content, content.view, true);
       shortPage = text.length <= 160;
       const chunks = translationChunks(text);
       schedulePosition();
